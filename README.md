@@ -17,7 +17,7 @@ To use this server with the Claude Desktop app, add the following configuration 
       "command": "uvx",
       "args": [
         "--from",
-        "git+https://github.com/cloudera/iceberg-mcp-server@main",
+        "git+https://github.com/odog96/iceberg-mcp-server/iceberg-mcp-server2@main",
         "run-server"
       ],
       "env": {
