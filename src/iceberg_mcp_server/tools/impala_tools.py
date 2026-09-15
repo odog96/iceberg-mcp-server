@@ -65,7 +65,10 @@ def execute_query(query: str) -> str:
         return f"Error: {str(e)}"
     finally:
         if conn:
-            conn.close()
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 def get_schema() -> str:
@@ -81,4 +84,7 @@ def get_schema() -> str:
         return f"Error: {str(e)}"
     finally:
         if conn:
-            conn.close()
+            try:
+                conn.close()
+            except Exception:
+                pass
