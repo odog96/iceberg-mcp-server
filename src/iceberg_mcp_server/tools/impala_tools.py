@@ -8,9 +8,20 @@
 ## OF ANY KIND, either express or implied. Refer to the License for the specific
 ## permissions and limitations governing your use of the file.
 
+import base64
 import json
 import os
 from impala.dbapi import connect
+
+
+def _get_password():
+    # Some deployment environments route env var injection through a shell
+    # layer that interpolates unescaped "$" in the value, silently truncating
+    # passwords that contain it. IMPALA_PASSWORD_B64 sidesteps that entirely.
+    b64 = os.getenv("IMPALA_PASSWORD_B64")
+    if b64:
+        return base64.b64decode(b64).decode()
+    return os.getenv("IMPALA_PASSWORD", "password")
 
 
 # Helper to get Impala connection details from env vars
@@ -18,7 +29,7 @@ def get_db_connection():
     host = os.getenv("IMPALA_HOST", "coordinator-default-impala.example.com")
     port = int(os.getenv("IMPALA_PORT", "443"))
     user = os.getenv("IMPALA_USER", "username")
-    password = os.getenv("IMPALA_PASSWORD", "password")
+    password = _get_password()
     database = os.getenv("IMPALA_DATABASE", "default")
     auth_mechanism = os.getenv("IMPALA_AUTH_MECHANISM", "LDAP")
     use_http_transport = os.getenv("IMPALA_USE_HTTP_TRANSPORT", "true")

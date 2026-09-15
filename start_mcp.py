@@ -5,6 +5,11 @@ need for a nested virtualenv/uv env: dependencies are installed straight into
 the system Python. CML injects the externally-routable port via CDSW_APP_PORT;
 we map that onto FastMCP's own FASTMCP_PORT/FASTMCP_HOST settings.
 
+The app must bind 127.0.0.1, not 0.0.0.0: CML's own sidecar proxy already owns
+0.0.0.0:<CDSW_APP_PORT> to terminate the public-facing connection, and forwards
+internally to 127.0.0.1:<port> where our process is expected to listen. Binding
+0.0.0.0 collides with that proxy ("address already in use").
+
 This is a .py file (not a .sh script) because this workspace's Application
 launcher runs script entrypoints through the ML Runtime's Python kernel rather
 than through a shell (a bash script fails immediately with a SyntaxError), and
@@ -32,7 +37,7 @@ subprocess.run(
 
 env = os.environ.copy()
 env["MCP_TRANSPORT"] = env.get("MCP_TRANSPORT", "http")
-env["FASTMCP_HOST"] = "0.0.0.0"
+env["FASTMCP_HOST"] = "127.0.0.1"
 env["FASTMCP_PORT"] = port
 env["PYTHONUNBUFFERED"] = "1"
 
