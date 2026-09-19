@@ -5,58 +5,9 @@ This is a A Model Context Protocol server that provides read-only access to Iceb
 - `execute_query(query: str)`: Run any SQL query on Impala and return the results as JSON.
 - `get_schema()`: List all tables available in the current database.
 
-## Usage with Claude Desktop
+## Deployment
 
-To use this server with the Claude Desktop app, add the following configuration to the "mcpServers" section of your `claude_desktop_config.json`:
-
-### Option 1: Direct installation from GitHub (Recommended)
-```json
-{
-  "mcpServers": {
-    "iceberg-mcp-server": {
-      "command": "uvx",
-      "args": [
-        "--from",
-        "git+https://github.com/cloudera/iceberg-mcp-server@main",
-        "run-server"
-      ],
-      "env": {
-        "IMPALA_HOST": "coordinator-default-impala.example.com",
-        "IMPALA_PORT": "443",
-        "IMPALA_USER": "username",
-        "IMPALA_PASSWORD": "password",
-        "IMPALA_DATABASE": "default"
-      }
-    }
-  }
-}
-```
-
-### Option 2: Local installation (after cloning the repository)
-```json
-{
-  "mcpServers": {
-    "iceberg-mcp-server": {
-      "command": "uv",
-      "args": [
-        "--directory",
-        "/path/to/iceberg-mcp-server",
-        "run",
-        "src/iceberg_mcp_server/server.py"
-      ],
-      "env": {
-        "IMPALA_HOST": "coordinator-default-impala.example.com",
-        "IMPALA_PORT": "443",
-        "IMPALA_USER": "username",
-        "IMPALA_PASSWORD": "password",
-        "IMPALA_DATABASE": "default"
-      }
-    }
-  }
-}
-```
-
-For Option 2, replace `/path/to` with your path to this repository. Set the environment variables according to your Impala configuration.
+This fork is deployed as a Cloudera Machine Learning (CML) Application using `start_mcp.py`, which installs the package with `pip` and serves MCP over HTTP. See `docs/build-plan.md` for the architecture, setup runbook and build steps.
 
 ## Usage with AI frameworks
 
