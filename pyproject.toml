@@ -17,6 +17,7 @@ dev = [
     "debugpy==1.8.12",
     "pyjwt[crypto]>=2.8",
     "pytest==8.2.2",
+    "pytest-asyncio>=0.23",
     "pytest-cov==5.0.0",
     "ruff==0.11.10",
 ]
@@ -37,3 +38,4 @@ run-server = "iceberg_mcp_server.server:main"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+asyncio_mode = "auto"
