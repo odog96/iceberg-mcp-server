@@ -29,7 +29,7 @@ The server refuses to start unless `ENTRA_TENANT_ID`+`ENTRA_AUDIENCE` or `MCP_TE
 ## Testing
 
 ```
-pip install -e . pytest pytest-asyncio "pyjwt[crypto]"
+pip install -e . --group dev      # everything comes from pyproject.toml
 pytest                                   # unit + end-to-end auth tests, no Cloudera needed
 python scripts/test_doas.py --allowed <user> --denied <user>   # against a real Impala VW
 python scripts/call_mcp.py <url> get_schema --token "$TOKEN"   # against a deployed server
