@@ -3,9 +3,9 @@ name = "iceberg-mcp-server"
 version = "0.1.0"
 description = "Cloudera Iceberg MCP Server via Impala"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 dependencies = [
-    "fastmcp>=2.9.2",
+    "fastmcp==2.14.7",
     "impyla>=0.21.0",
     "mcp[cli]>=1.9.4",
     "python-dotenv>=1.1.0",
@@ -15,6 +15,7 @@ dependencies = [
 dev = [
     "autoflake==2.3.1",
     "debugpy==1.8.12",
+    "pyjwt[crypto]>=2.8",
     "pytest==8.2.2",
     "pytest-cov==5.0.0",
     "ruff==0.11.10",
@@ -32,3 +33,7 @@ path = "src/iceberg_mcp_server/__init__.py"
 
 [project.scripts]
 run-server = "iceberg_mcp_server.server:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

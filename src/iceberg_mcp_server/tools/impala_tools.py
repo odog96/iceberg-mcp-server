@@ -11,7 +11,20 @@
 import base64
 import json
 import os
+import re
+from urllib.parse import quote
+
 from impala.dbapi import connect
+
+# The effective user lands in a URL query string (http_path=...?doAs=<user>), so
+# it is restricted to a strict character set and URL-encoded as well.
+USERNAME_RE = re.compile(r"^[a-z][a-z0-9._-]{0,63}$")
+
+
+def validate_username(user) -> str:
+    if not isinstance(user, str) or not USERNAME_RE.fullmatch(user):
+        raise ValueError("Invalid Cloudera username")
+    return user
 
 
 def _get_password():
@@ -24,8 +37,12 @@ def _get_password():
     return os.getenv("IMPALA_PASSWORD", "password")
 
 
-# Helper to get Impala connection details from env vars
-def get_db_connection():
+# Helper to get Impala connection details from env vars. The machine user
+# authenticates; the connection asks Impala to run as `effective_user` (doAs),
+# so Ranger and the audit log see the end user. There is deliberately no default
+# for effective_user: a missing user must never fall back to the machine user.
+def get_db_connection(effective_user: str):
+    effective_user = validate_username(effective_user)
     host = os.getenv("IMPALA_HOST", "coordinator-default-impala.example.com")
     port = int(os.getenv("IMPALA_PORT", "443"))
     user = os.getenv("IMPALA_USER", "username")
@@ -33,7 +50,8 @@ def get_db_connection():
     database = os.getenv("IMPALA_DATABASE", "default")
     auth_mechanism = os.getenv("IMPALA_AUTH_MECHANISM", "LDAP")
     use_http_transport = os.getenv("IMPALA_USE_HTTP_TRANSPORT", "true")
-    http_path = os.getenv("IMPALA_HTTP_PATH", "cliservice")
+    http_path = os.getenv("IMPALA_HTTP_PATH", "cliservice").split("?", 1)[0]
+    http_path = f"{http_path}?doAs={quote(effective_user, safe='')}"
     use_ssl = os.getenv("IMPALA_USE_SSL", "true")
 
     return connect(
@@ -49,19 +67,56 @@ def get_db_connection():
     )
 
 
-def execute_query(query: str) -> str:
+READONLY_PREFIXES = {"select", "show", "describe", "with"}
+# A WITH clause can front an INSERT in Impala, so write keywords are rejected
+# anywhere in a WITH/SELECT statement. SHOW and DESCRIBE cannot front a write
+# (and SHOW CREATE TABLE legitimately contains "create"), so they skip this check.
+WRITE_KEYWORDS = {"insert", "upsert", "update", "delete", "create", "drop", "alter", "truncate", "grant", "revoke", "load", "merge"}
+
+_TOKEN_RE = re.compile(
+    r"""
+    --[^\n]*            # line comment
+    | /\*.*?\*/          # block comment
+    | '(?:[^'\\]|\\.)*'  # single-quoted string
+    | "(?:[^"\\]|\\.)*"  # double-quoted string
+    | `[^`]*`            # quoted identifier
+    """,
+    re.VERBOSE | re.DOTALL,
+)
+
+
+def check_readonly(query: str):
+    """Return an error message if the query is not a single read-only statement, else None.
+
+    Defence in depth only: the real gate is Ranger applied to the impersonated user.
+    """
+    if not isinstance(query, str) or not query.strip():
+        return "Empty query."
+    # Blank out comments, strings and quoted identifiers so their contents cannot
+    # hide (or fake) keywords and semicolons.
+    stripped = _TOKEN_RE.sub(" ", query)
+    if re.search(r"/\*|\*/|['\"`]", stripped):
+        return "Unterminated comment, string or identifier."
+    stripped = stripped.strip().rstrip(";").strip()
+    if ";" in stripped:
+        return "Only a single statement is allowed."
+    words = re.findall(r"[a-z_]+", stripped.lower())
+    if not words or words[0] not in READONLY_PREFIXES:
+        return "Only read-only queries are allowed."
+    if words[0] in {"select", "with"} and WRITE_KEYWORDS.intersection(words):
+        return "Only read-only queries are allowed."
+    return None
+
+
+def execute_query(query: str, effective_user: str) -> str:
     conn = None
 
-    # Implement rudimentary SQL injection prevention
-    # In this case, we only allow read-only queries
-    # This is a very basic check and should be improved for production use
-    readonly_prefixes = ["select", "show", "describe", "with"]
-
-    if not query.strip().lower().split()[0] in readonly_prefixes:
-        return "Only read-only queries are allowed."
+    error = check_readonly(query)
+    if error:
+        return error
 
     try:
-        conn = get_db_connection()
+        conn = get_db_connection(effective_user)
         cur = conn.cursor()
         cur.execute(query)
         if cur.description:
@@ -82,10 +137,10 @@ def execute_query(query: str) -> str:
                 pass
 
 
-def get_schema() -> str:
+def get_schema(effective_user: str) -> str:
     conn = None
     try:
-        conn = get_db_connection()
+        conn = get_db_connection(effective_user)
         cur = conn.cursor()
         cur.execute("SHOW TABLES")
         tables = cur.fetchall()
