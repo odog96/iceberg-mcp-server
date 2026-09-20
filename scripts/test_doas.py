@@ -1,7 +1,7 @@
 """B1: prove the machine-user + doAs impersonation pattern against Impala.
 
 Run from the repo root with connection details in the environment (or in
-impala_details.txt as KEY=VALUE lines, which is gitignored):
+impala_details.txt (KEY=VALUE or key: value lines; gitignored)):
 
     IMPALA_HOST, IMPALA_PORT (443), IMPALA_USER (machine user),
     IMPALA_PASSWORD_B64 or IMPALA_PASSWORD, IMPALA_DATABASE (default)
@@ -33,14 +33,32 @@ from iceberg_mcp_server.tools.impala_tools import get_db_connection  # noqa: E40
 SYSTEM_DATABASES = {"information_schema", "sys", "_impala_builtins"}
 
 
-def load_details_file(path: Path) -> None:
+# Accepted spellings in the details file -> the env var the server code reads.
+KEY_ALIASES = {
+    "impala_host": "IMPALA_HOST",
+    "impala_port": "IMPALA_PORT",
+    "impala_username": "IMPALA_USER",
+    "impala_user": "IMPALA_USER",
+    "impala_password": "IMPALA_PASSWORD",
+    "impala_password_b64": "IMPALA_PASSWORD_B64",
+    "impala_database": "IMPALA_DATABASE",
+}
+
+
+def load_details_file(path: Path) -> bool:
+    """Load `KEY=value` or `key: value` lines into os.environ (existing env wins)."""
     if not path.exists():
-        return
+        return False
     for line in path.read_text().splitlines():
         line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            key, value = line.split("=", 1)
-            os.environ.setdefault(key.strip(), value.strip())
+        if not line or line.startswith("#"):
+            continue
+        sep = min((i for i in (line.find("="), line.find(":")) if i > 0), default=-1)
+        if sep < 0:
+            continue
+        key, value = line[:sep].strip(), line[sep + 1 :].strip()
+        os.environ.setdefault(KEY_ALIASES.get(key.lower(), key), value)
+    return True
 
 
 def query(conn, sql: str) -> list:
@@ -148,7 +166,9 @@ def main() -> int:
     parser.add_argument("--max-tables", type=int, default=10, help="row-count at most this many tables per user")
     args = parser.parse_args()
 
-    load_details_file(Path(__file__).resolve().parent.parent / "impala_details.txt")
+    root = Path(__file__).resolve().parent.parent
+    if not load_details_file(root / "impala_details.txt"):
+        print("[note] no impala_details.txt found; using environment variables only")
     allowed = [u.strip() for u in args.allowed.split(",") if u.strip()]
     denied = [u.strip() for u in args.denied.split(",") if u.strip()]
 

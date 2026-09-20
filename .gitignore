@@ -9,9 +9,25 @@ wheels/
 # Virtual environments
 .venv
 
-# Environment variables
+# Credentials and connection details: never commit
 .env
+.env.*
 impala_details.txt
+impala_*.txt
+*.pem
+*.key
+*credentials*.json
+
+# Local tooling state (Claude Code sessions/credentials, caches, shell history)
+.claude/
+.claude.json
+.claude.json.tmp.*
+.local/
+.cache/
+.bash_history
+.Rprofile
+.pytest_cache/
+.virtual_documents/
 
 # Jupyter
 .ipynb_checkpoints/
