@@ -23,7 +23,7 @@ import os
 import subprocess
 import sys
 
-PROJECT_DIR = "/home/cdsw/iceberg-mcp-server"
+PROJECT_DIR = "/home/cdsw"
 
 port = os.environ.get("CDSW_APP_PORT")
 if not port:
