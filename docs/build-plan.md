@@ -56,15 +56,24 @@ Key design decisions:
   mapping table stored in Cloudera, looked up (by the machine user) after the
   token is validated.
 
-## 3. Status at time of writing
+## 3. Status
+
+Updated 2026-09-20 after the rebuild session. "Code done" means implemented and
+covered by tests that need no Cloudera or Azure (`pytest`, 65 tests); "unproven"
+means it has never run against a real Impala VW or a real Entra tenant.
 
 | Piece | State |
 |---|---|
-| Python script: machine user impersonating a user via `doAs` | Built and worked before; **lost**, must be rewritten |
-| `doAs` logic ported into MCP server (`impala_tools.py`) | Built and worked before; **lost** |
-| Azure token issuance + validation in the MCP server | **Never built** |
-| Azure account access, Azure AI Foundry model access (IT approval) | Pending, outside our control |
-| Machine user / VW in current sandbox | Not possible: no admin rights. Must use an environment where a machine user can be created |
+| B1 `scripts/test_doas.py` | Code done, **unproven**: needs a VW + machine user (Track A) |
+| B2 `doAs` in `impala_tools.py` (validated username, URL-encoded, tighter read-only guard) | Code done, unit-tested with a mocked `connect`; **unproven** against Impala |
+| B3 `start_mcp.py` path fix, `start_mcp.sh` removed | Code done, **not deployed** to CML yet |
+| B4 Entra validation + identity mapping (`identity.py`) | Code done. Tested end to end against a local JWKS: valid, expired, wrong audience/issuer/key, no token, unmapped user. **Unproven** against real Entra (v1 vs v2 issuer, which claim is present) |
+| B5 `scripts/call_mcp.py` | Done; needs a real token |
+| B6 Foundry chatbot end to end | Blocked on Azure access |
+| Machine user / VW in current sandbox | Not possible: no admin rights. Track A needs an environment with admin |
+
+Remaining critical path: Track A -> run B1 -> deploy (B3) with `MCP_TEST_USER`
+-> switch to `ENTRA_*` and test with a real token (B5) -> B6.
 
 Repo state: forked from `cloudera/iceberg-mcp-server`, with two CML commits
 (port binding, password injection). Tools: `execute_query`, `get_schema`.
@@ -189,9 +198,8 @@ Each step has an acceptance check. Commit when it passes.
 
 - `uv.lock` removed: CML deployments use `pip install .`, which ignores it.
   Pin dependency versions in `pyproject.toml` instead (see B4).
-- `pyproject.toml` requires Python >=3.12. The sandbox where this plan was
-  written ran Python 3.11. Confirm the CML runtime's Python version before
-  deploying, or `pip install .` will refuse.
+- `pyproject.toml` now requires Python >=3.10 (was 3.12) and pins
+  `fastmcp==2.14.7`, which is what the tests ran against on Python 3.10.
 - README's Claude Desktop / `uv` instructions were removed as irrelevant to this
   deployment.
 
