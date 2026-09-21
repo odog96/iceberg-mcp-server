@@ -1,0 +1,35 @@
+FOUNDRY: ADD MODEL CONTEXT PROTOCOL TOOL, COPY-PASTE VALUES
+None of these are secret, except the client secret, which is NOT in this file.
+Authentication dropdown: choose  OAuth Identity Passthrough  (custom OAuth)
+
+--- Name ---
+iceberg-mcp
+
+--- Remote MCP Server endpoint ---
+https://app1-mcp-9368e6.ml-946090b4-f27.se-sandb.a465-9q4k.cloudera.site/mcp
+
+--- Client ID  (this is the iceberg-mcp-client app) ---
+ac7b4ab5-79c3-4962-9c9a-3131a90f2217
+
+--- Client secret ---
+(not stored here: paste the Value you copied when you created the secret on iceberg-mcp-client)
+
+--- Auth URL ---
+https://login.microsoftonline.com/650a1000-e5e3-40bf-97a9-d62002a0934b/oauth2/v2.0/authorize
+
+--- Token URL ---
+https://login.microsoftonline.com/650a1000-e5e3-40bf-97a9-d62002a0934b/oauth2/v2.0/token
+
+--- Refresh URL  (same as Token URL) ---
+https://login.microsoftonline.com/650a1000-e5e3-40bf-97a9-d62002a0934b/oauth2/v2.0/token
+
+--- Scopes  (ONE line, single space between the two, NO comma) ---
+api://1217683d-abaf-41ff-bbf7-c53a0a8814a9/access_as_user offline_access
+
+--- After you click Connect ---
+Foundry shows a redirect URL. Copy it, then in the Entra portal open iceberg-mcp-client:
+Authentication > Add a platform > Web > paste it > Configure.
+
+--- Order reminder ---
+Do not finish this connection until Claude has switched app1 to real token checking.
+Until then app1 accepts any request, so a working call would prove nothing.
