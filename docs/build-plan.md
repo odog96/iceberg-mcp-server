@@ -64,13 +64,29 @@ means it has never run against a real Impala VW or a real Entra tenant.
 
 | Piece | State |
 |---|---|
-| B1 `scripts/test_doas.py` | Code done, **unproven**: needs a VW + machine user (Track A) |
+| Track A (machine user, VW, `authorized_proxy_user_config`) | **Done and proven** 2026-09-21: `srv_srv_mcp_proxy` impersonates ozarate, jgaragorry, fcobo, jcaseiro; a non-allowlisted user is rejected |
+| Sample data | `mcp_demo` (MovieLens small, 4 tables, ~124k rows) loaded by `scripts/setup_sample_data.py`; all 4 users can read it |
+| B1 `scripts/test_doas.py` | **Proven** against the real VW (see Track A row); the query-log/audit check is a manual step |
 | B2 `doAs` in `impala_tools.py` (validated username, URL-encoded, tighter read-only guard) | Code done, unit-tested with a mocked `connect`; **unproven** against Impala |
-| B3 `start_mcp.py` path fix, `start_mcp.sh` removed | Code done, **not deployed** to CML yet |
+| B3 `start_mcp.py` path fix, `start_mcp.sh` removed | **Proven**: CML Application `app1` (unauthenticated, `MCP_TEST_USER=ozarate`, no token check) answers `get_schema` and `execute_query` as ozarate; writes and stacked statements are refused. Created via `cmlapi` (see below) |
 | B4 Entra validation + identity mapping (`identity.py`) | Code done. Tested end to end against a local JWKS: valid, expired, wrong audience/issuer/key, no token, unmapped user. **Unproven** against real Entra (v1 vs v2 issuer, which claim is present) |
 | B5 `scripts/call_mcp.py` | Done; needs a real token |
 | B6 Foundry chatbot end to end | Blocked on Azure access |
 | Machine user / VW in current sandbox | Not possible: no admin rights. Track A needs an environment with admin |
+
+**Workspace policy:** CML can block unauthenticated Applications site-wide
+(`unauthenticated access to applications prevented by site-wide configuration`).
+An admin has to allow it; without it the external Azure client cannot reach the
+MCP server at all. Recorded because it was a hard blocker on 2026-09-21.
+
+**Creating `app1` from a session:** `cmlapi.default_client().create_application(...)`
+with `bypass_authentication=True`, `script="start_mcp.py"`, runtime
+`ml-runtime-pbj-workbench-python3.12-standard`, and env vars `IMPALA_HOST`,
+`IMPALA_PORT`, `IMPALA_USER`, `IMPALA_PASSWORD_B64`, `IMPALA_DATABASE=mcp_demo`,
+`MCP_TEST_USER`, `MCP_TRANSPORT=http`. URL is `https://<subdomain>.<CDSW_DOMAIN>/mcp`.
+The Application config holds the password, so treat project access accordingly.
+While `MCP_TEST_USER` is set, anyone with the URL can run read-only queries as
+that user: stop the app when not testing.
 
 Remaining critical path: Track A -> run B1 -> deploy (B3) with `MCP_TEST_USER`
 -> switch to `ENTRA_*` and test with a real token (B5) -> B6.
