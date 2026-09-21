@@ -18,9 +18,8 @@ Keep them straight: **Client ID = client app. Scopes = server app.**
 | Item | Value |
 |---|---|
 | Tenant ID (verified) | `650a1000-e5e3-40bf-97a9-d62002a0934b` |
-| `iceberg-mcp-server` Application (client) ID | ______________________ |
-| `iceberg-mcp-client` Application (client) ID | ______________________ |
-| Unlabeled ID received: `1217683d-abaf-41ff-bbf7-c53a0a8814a9` | which app is it? ______ |
+| `iceberg-mcp-server` Application (client) ID | `1217683d-abaf-41ff-bbf7-c53a0a8814a9` (deduced, confirm via the `aud` claim of a real token) |
+| `iceberg-mcp-client` Application (client) ID | `ac7b4ab5-79c3-4962-9c9a-3131a90f2217` |
 | Rejected: `30fac747-...` (your user object ID), `3d27c83f-...` ("Entra agent identity") | not app registrations, do not use |
 
 ## Part A: `iceberg-mcp-server` (the API)
@@ -60,12 +59,12 @@ see who is asking.
 
 | Foundry field | Value |
 |---|---|
-| Client ID | `iceberg-mcp-client` ID |
+| Client ID | `ac7b4ab5-79c3-4962-9c9a-3131a90f2217` |
 | Client secret | the secret from B4 |
 | Auth URL | `https://login.microsoftonline.com/650a1000-e5e3-40bf-97a9-d62002a0934b/oauth2/v2.0/authorize` |
 | Token URL | `https://login.microsoftonline.com/650a1000-e5e3-40bf-97a9-d62002a0934b/oauth2/v2.0/token` |
 | Refresh URL | same as Token URL |
-| Scopes | `api://<iceberg-mcp-server ID>/access_as_user offline_access` (one space, no comma) |
+| Scopes | `api://1217683d-abaf-41ff-bbf7-c53a0a8814a9/access_as_user offline_access` (one space, no comma) |
 
 After Connect, Foundry shows a **redirect URL**. Add it to `iceberg-mcp-client`:
 Authentication > Add a platform > Web > paste it.

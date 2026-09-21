@@ -12,6 +12,10 @@ Environment variables:
     ENTRA_JWKS_URI         optional; default is the tenant's v2.0 keys endpoint
     ENTRA_USER_CLAIMS      comma-separated claim names tried in order
                            (default: preferred_username,upn,email)
+    USER_MAP               optional comma-separated identity=cloudera_user pairs, e.g.
+                           me@corp.com=ozarate,other@corp.com=jcaseiro. When set it is
+                           exclusive: an identity not listed is rejected (no local-part
+                           fallback). Use it when token identities are not Cloudera names.
     ALLOWED_USERS          optional comma-separated Cloudera usernames; if set, any
                            other mapped user is rejected
     MCP_TEST_USER          fixed Cloudera user for test deployments with no token
@@ -53,19 +57,35 @@ def build_verifier():
     )
 
 
+def _user_map() -> dict[str, str]:
+    mapping = {}
+    for pair in _csv("USER_MAP"):
+        identity, sep, user = pair.partition("=")
+        if sep and identity.strip() and user.strip():
+            mapping[identity.strip().lower()] = user.strip().lower()
+    return mapping
+
+
 def map_claims_to_user(claims: dict) -> str:
     """Map validated token claims to a Cloudera username, or raise IdentityError.
 
-    Uses the local part of the first present identity claim
-    (ozarate@corp.com -> ozarate). Swap this function for a lookup-table
-    implementation if the local-part convention turns out to be unreliable.
+    With USER_MAP set, the first identity claim value found in the map wins and anything else
+    is rejected. Without it, uses the local part of the first present identity claim
+    (ozarate@corp.com -> ozarate).
     """
     claim_names = _csv("ENTRA_USER_CLAIMS") or list(DEFAULT_USER_CLAIMS)
-    raw = next((claims[c] for c in claim_names if isinstance(claims.get(c), str) and claims[c]), None)
-    if raw is None:
+    candidates = [claims[c].strip() for c in claim_names if isinstance(claims.get(c), str) and claims[c].strip()]
+    if not candidates:
         raise IdentityError("Token has no usable identity claim")
 
-    user = raw.split("@", 1)[0].strip().lower()
+    mapping = _user_map()
+    if mapping:
+        user = next((mapping[c.lower()] for c in candidates if c.lower() in mapping), None)
+        if user is None:
+            raise IdentityError("User is not permitted")
+    else:
+        user = candidates[0].split("@", 1)[0].strip().lower()
+
     try:
         validate_username(user)
     except ValueError:

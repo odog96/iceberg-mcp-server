@@ -5,7 +5,7 @@ from iceberg_mcp_server import identity
 
 @pytest.fixture(autouse=True)
 def clean_env(monkeypatch):
-    for k in ("ENTRA_TENANT_ID", "ENTRA_AUDIENCE", "ENTRA_USER_CLAIMS", "ALLOWED_USERS", "MCP_TEST_USER"):
+    for k in ("ENTRA_TENANT_ID", "ENTRA_AUDIENCE", "ENTRA_USER_CLAIMS", "ALLOWED_USERS", "MCP_TEST_USER", "USER_MAP"):
         monkeypatch.delenv(k, raising=False)
 
 
@@ -57,3 +57,28 @@ def test_test_user_only_without_entra(monkeypatch):
 
 def test_build_verifier_none_when_unconfigured():
     assert identity.build_verifier() is None
+
+
+def test_user_map_maps_odd_identity(monkeypatch):
+    monkeypatch.setenv("USER_MAP", "oliver_gmail.com#EXT#@t.onmicrosoft.com=ozarate, other@corp.com=JCaseiro")
+    assert identity.map_claims_to_user({"preferred_username": "Oliver_Gmail.com#EXT#@t.onmicrosoft.com"}) == "ozarate"
+    assert identity.map_claims_to_user({"upn": "other@corp.com"}) == "jcaseiro"
+
+
+def test_user_map_is_exclusive_no_local_part_fallback(monkeypatch):
+    monkeypatch.setenv("USER_MAP", "me@corp.com=ozarate")
+    with pytest.raises(identity.IdentityError):
+        identity.map_claims_to_user({"preferred_username": "fcobo@corp.com"})
+
+
+def test_user_map_value_still_validated(monkeypatch):
+    monkeypatch.setenv("USER_MAP", "me@corp.com=a&doAs=root")
+    with pytest.raises(identity.IdentityError):
+        identity.map_claims_to_user({"preferred_username": "me@corp.com"})
+
+
+def test_user_map_respects_allowlist(monkeypatch):
+    monkeypatch.setenv("USER_MAP", "me@corp.com=ozarate")
+    monkeypatch.setenv("ALLOWED_USERS", "jcaseiro")
+    with pytest.raises(identity.IdentityError):
+        identity.map_claims_to_user({"preferred_username": "me@corp.com"})

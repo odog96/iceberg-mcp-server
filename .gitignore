@@ -17,6 +17,8 @@ impala_*.txt
 *.pem
 *.key
 *credentials*.json
+.entra_token*
+*.token
 
 # Local tooling state (Claude Code sessions/credentials, caches, shell history)
 .claude/

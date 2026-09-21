@@ -21,6 +21,7 @@ This fork is deployed as a Cloudera Machine Learning (CML) Application using `st
 | `ENTRA_TENANT_ID`, `ENTRA_AUDIENCE` | Enable Entra token validation. Audience is the app registration's Application ID URI |
 | `ENTRA_ISSUER`, `ENTRA_JWKS_URI` | Optional overrides (default to the v2.0 issuer/keys for the tenant; use `https://sts.windows.net/<tenant>/` for v1 tokens) |
 | `ENTRA_USER_CLAIMS` | Claims tried in order for identity (default `preferred_username,upn,email`); the local part becomes the Cloudera username |
+| `USER_MAP` | Optional `identity=cloudera_user` pairs (comma-separated) for tokens whose identity is not a Cloudera name. When set it is exclusive: unlisted identities are rejected |
 | `ALLOWED_USERS` | Optional comma-separated allowlist of Cloudera usernames |
 | `MCP_TEST_USER` | **Test deployments only:** skip token validation and run every call as this user. Ignored when `ENTRA_*` is set |
 
@@ -32,7 +33,8 @@ The server refuses to start unless `ENTRA_TENANT_ID`+`ENTRA_AUDIENCE` or `MCP_TE
 pip install -e . --group dev      # everything comes from pyproject.toml
 pytest                                   # unit + end-to-end auth tests, no Cloudera needed
 python scripts/test_doas.py --allowed <user> --denied <user>   # against a real Impala VW
-python scripts/call_mcp.py <url> get_schema --token "$TOKEN"   # against a deployed server
+python scripts/get_entra_token.py                               # real Entra sign-in (device code) -> .entra_token
+python scripts/call_mcp.py <url> get_schema --token-file .entra_token --claims   # against a deployed server
 ```
 
 ## Usage with AI frameworks

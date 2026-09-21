@@ -15,6 +15,7 @@ import base64
 import json
 import os
 import sys
+from pathlib import Path
 
 from fastmcp import Client
 from fastmcp.client.auth import BearerAuth
@@ -31,8 +32,12 @@ async def main() -> int:
     ap.add_argument("tool", choices=["get_schema", "execute_query"])
     ap.add_argument("--query")
     ap.add_argument("--token", default=os.getenv("TOKEN"))
+    ap.add_argument("--token-file", help="read the bearer token from this file (keeps it out of shell history)")
     ap.add_argument("--claims", action="store_true", help="print the token's unverified claims first")
     args = ap.parse_args()
+
+    if args.token_file:
+        args.token = Path(args.token_file).read_text().strip()
 
     if args.claims and args.token:
         claims = decode_claims(args.token)
