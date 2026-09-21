@@ -1,80 +1,86 @@
-# Entra app registration checklist
+# Entra checklist: WORK FROM THIS FILE
 
-Do this in order. Tick each box as you go. Full background is in `entra-setup.md`; this file
-is the short version to work from. Nothing here is secret except the client secret (B4),
-which goes only into Foundry.
+(`entra-setup.md` is only background reading. Everything you need to do is here.)
 
-Portal: https://entra.microsoft.com > Identity > Applications > App registrations
+Portal: https://entra.microsoft.com > Identity > Applications > App registrations > **All applications**
+
+## DO THIS NOW, in this order
+- [ ] **1. Turn on "Allow public client flows" on `iceberg-mcp-client`.** Details in section B3 below.
+- [ ] **2. Confirm the Foundry redirect URL is on `iceberg-mcp-client` as a Web redirect.** Details in section B5 below.
+- [ ] **3. Run the token script** in the Cloudera AI prompt:
+      `! python3 scripts/get_entra_token.py`
+      Open the URL it prints, enter the code, sign in as yourself. It should end with
+      "Saved token to .entra_token" and a list of claims.
+- [ ] **4. Send the printed claims to Claude** (nothing secret in them). Claude then switches `app1`
+      to token checking. Do not test through Foundry until Claude says so.
+
+## Values (all verified except where noted)
+| Item | Value |
+|---|---|
+| Tenant ID (verified with Microsoft) | `650a1000-e5e3-40bf-97a9-d62002a0934b` |
+| `iceberg-mcp-server` Application (client) ID | `1217683d-abaf-41ff-bbf7-c53a0a8814a9` (deduced; a real token's `aud` will confirm) |
+| `iceberg-mcp-client` Application (client) ID | `ac7b4ab5-79c3-4962-9c9a-3131a90f2217` |
+| Foundry redirect URL | `https://global.consent.azure-apim.net/redirect/9e7a7a930b29482a9ff0291aaf0aa410` |
+| Not app registrations, do not use | `30fac747-...` (your user ID), `3d27c83f-...` ("Entra agent identity") |
 
 ## Why two apps
 | App | Job | Foundry field it feeds |
 |---|---|---|
-| `iceberg-mcp-server` (the API) | Defines what a token "for the MCP server" is. The token's audience. | **Scopes** |
-| `iceberg-mcp-client` | The app Foundry signs users in through. Has the secret. | **Client ID**, **Client secret** |
+| `iceberg-mcp-server` (the API) | The token's audience | **Scopes** |
+| `iceberg-mcp-client` | What Foundry (and our token script) signs in through. Has the secret. | **Client ID**, **Client secret** |
 
-Keep them straight: **Client ID = client app. Scopes = server app.**
-
-## Values so far (fill in as you go)
-| Item | Value |
-|---|---|
-| Tenant ID (verified) | `650a1000-e5e3-40bf-97a9-d62002a0934b` |
-| `iceberg-mcp-server` Application (client) ID | `1217683d-abaf-41ff-bbf7-c53a0a8814a9` (deduced, confirm via the `aud` claim of a real token) |
-| `iceberg-mcp-client` Application (client) ID | `ac7b4ab5-79c3-4962-9c9a-3131a90f2217` |
-| Rejected: `30fac747-...` (your user object ID), `3d27c83f-...` ("Entra agent identity") | not app registrations, do not use |
-
-## Part A: `iceberg-mcp-server` (the API)
-- [ ] **A1. Register.** New registration. Name `iceberg-mcp-server`. **Single tenant only**.
-      Redirect URI blank. Register. Copy the **Application (client) ID** into the table.
-- [ ] **A2. Expose an API.** Manage > Expose an API.
-  - [ ] Application ID URI > Add > keep default `api://<client-id>` > Save
-  - [ ] + Add a scope: name `access_as_user`, who can consent **Admins and users**,
-        display name `Access the Iceberg MCP server`, description
-        `Access the Iceberg MCP server as the signed-in user`, state **Enabled** > Add scope
-- [ ] **A3. Token version 2.** Manage > Manifest. In the `api` block set
-      `"requestedAccessTokenVersion": 2` (older manifest format: `"accessTokenAcceptedVersion": 2`).
-      Save.
+## Part A: `iceberg-mcp-server`  (you reported these as done)
+- [x] **A1. Register.** Single tenant, no redirect URI.
+- [x] **A2. Expose an API.** Application ID URI `api://<client-id>`; scope `access_as_user` (Admins and users, Enabled).
+- [x] **A3. Token version 2.** Manifest, `api` block: `"requestedAccessTokenVersion": 2`
+      (older manifest format: `"accessTokenAcceptedVersion": 2`).
 
 ## Part B: `iceberg-mcp-client`
-- [ ] **B1. Register.** New registration. Name `iceberg-mcp-client`. **Single tenant only**.
-      Redirect URI blank for now. Register. Copy the **Application (client) ID** into the table.
-- [ ] **B2. Permission to call the API.** Manage > API permissions > + Add a permission >
-      "APIs my organization uses" (or "My APIs") > `iceberg-mcp-server` > Delegated permissions >
-      tick `access_as_user` > Add permissions.
-- [ ] **B2b. Grant admin consent** for your tenant (button on the same page). Status turns green.
-- [ ] **B3. Public client flows.** Manage > Authentication (or Settings tab) >
-      **Allow public client flows = Yes** > Save.
-- [ ] **B4. Client secret.** Manage > Certificates & secrets > New client secret > 6 months >
-      Add. Copy the **Value** (not the Secret ID) right away. It is shown once.
-      Keep it for Foundry. Do not paste it in chat, docs or git.
+- [x] **B1. Register.** Single tenant.
+- [x] **B2. API permission.** API permissions > Add > `iceberg-mcp-server` > Delegated > `access_as_user`.
+- [x] **B2b. Admin consent granted** (status column green).
+- [ ] **B3. ALLOW PUBLIC CLIENT FLOWS = Yes.  <- NOT DONE YET, this is what is blocking the token script.**
+      Our token script logs in as a "public client". Entra rejects that unless this switch is on.
+      On `iceberg-mcp-client`, use the first way that works for you:
 
-## Send back to Claude
-- [ ] `iceberg-mcp-server` Application (client) ID
-- [ ] `iceberg-mcp-client` Application (client) ID
-- [ ] Did admin consent turn green? Did the manifest save?
+      **Way 1 (newer portal):**
+      1. Left menu > **Authentication**.
+      2. Across the top of the page there are tabs. Click the **Settings** tab.
+      3. Find **Allow public client flows** ("Enable the following mobile and desktop flows").
+      4. Set it to **Yes** / **Enabled**, then **Save**.
 
-## Then: Foundry OAuth fields
-Foundry > Tools > add MCP tool > Authentication: **OAuth Identity Passthrough** (custom OAuth).
-Do not pick "Microsoft Entra" or key-based: they are shared identities, so the server would not
-see who is asking.
+      **Way 2 (older portal):** left menu > **Authentication** > scroll to the bottom to the section
+      **Advanced settings** > **Allow public client flows** > **Yes** > **Save**.
 
-| Foundry field | Value |
-|---|---|
-| Client ID | `ac7b4ab5-79c3-4962-9c9a-3131a90f2217` |
-| Client secret | the secret from B4 |
-| Auth URL | `https://login.microsoftonline.com/650a1000-e5e3-40bf-97a9-d62002a0934b/oauth2/v2.0/authorize` |
-| Token URL | `https://login.microsoftonline.com/650a1000-e5e3-40bf-97a9-d62002a0934b/oauth2/v2.0/token` |
-| Refresh URL | same as Token URL |
-| Scopes | `api://1217683d-abaf-41ff-bbf7-c53a0a8814a9/access_as_user offline_access` (one space, no comma) |
+      **Way 3 (if you see no such setting): edit the manifest.** Left menu > **Manifest**.
+      - If there are two tabs, use **Microsoft Graph App Manifest**. Find `"isFallbackPublicClient"`
+        and change `false` to `true`.
+      - In the older format the field is `"allowPublicClient"`: change `null` or `false` to `true`.
+      Click **Save**. (These field names are from general knowledge; tell Claude if neither exists.)
 
-After Connect, Foundry shows a **redirect URL**. Add it to `iceberg-mcp-client`:
-Authentication > Add a platform > Web > paste it.
+      Check: reopen the setting and confirm it now says Yes.
+- [x] **B4. Client secret created** and pasted into Foundry. Never paste it in chat, docs or git.
+- [ ] **B5. Foundry redirect URL added as a WEB redirect.**
+      1. `iceberg-mcp-client` > **Authentication**.
+      2. Open the **Redirect URI configuration** tab (or the "Platform configurations" list in the older layout).
+      3. If nothing is listed: **+ Add a platform** (or **+ Add Redirect URI**) > **Web**.
+      4. Paste: `https://global.consent.azure-apim.net/redirect/9e7a7a930b29482a9ff0291aaf0aa410`
+      5. **Configure**, then **Save**.
+      Check that it appears under **Web**, not "Single-page application" or "Mobile and desktop".
+      (This is for Foundry's sign-in. The token script does not use it.)
+
+## Foundry fields
+Copy-paste values are in `docs/foundry-connection-fields.txt`. Authentication must be
+**OAuth Identity Passthrough** (custom OAuth), not "Microsoft Entra" or key-based: those are shared
+identities, so the server would never see who is asking.
 
 ## Do not do yet
-Do not finish the Foundry connection until Claude has switched `app1` from its fixed test user
-to real token checking. Until then `app1` accepts anything, so a working call proves nothing.
+Do not test through Foundry until Claude has switched `app1` from its fixed test user to real token
+checking. Until then `app1` accepts anything, so a working chat proves nothing.
 
-## Where we are after this
-1. Register the two apps (this file)
-2. Claude adds the user-mapping setting and a token test script, tests a real token
-3. Claude switches `app1` to token checking
-4. You finish the Foundry connection, then test through the agent
+## Where we are
+1. Register the two apps: done, except B3 and B5 above
+2. Claude adds user mapping and the token script: done
+3. You run the token script and send Claude the claims  <- you are here
+4. Claude switches `app1` to token checking
+5. You test through the Foundry agent

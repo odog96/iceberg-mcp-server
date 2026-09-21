@@ -1,4 +1,7 @@
-# Entra setup for the MCP server (runbook)
+# Entra setup for the MCP server (background runbook)
+
+> **To do the work, use `entra-app-registration-checklist.md`.** It has the current status, the
+> exact order, and the B1-B5 steps. This file is background reading and step numbers differ.
 
 Purpose: get real Entra ID tokens that the MCP server can validate, in a test tenant first
 and then in Sofra's tenant. The same steps apply to both; only the IDs and domain change.
