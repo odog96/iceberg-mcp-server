@@ -12,6 +12,7 @@ import os
 from fastmcp import FastMCP
 from fastmcp.server.dependencies import get_access_token
 from dotenv import load_dotenv
+from starlette.responses import PlainTextResponse
 
 load_dotenv()
 
@@ -22,6 +23,14 @@ from iceberg_mcp_server.tools import impala_tools
 # FastMCP before any tool runs. With no ENTRA_* config the server has no auth at
 # all, which main() only permits in explicit MCP_TEST_USER test mode.
 mcp = FastMCP(name="Cloudera Iceberg MCP Server via Impala", auth=identity.build_verifier())
+
+
+# Plain routes so a browser and CML's health poll (CDSW_APP_POLLING_ENDPOINT=/) get a 200
+# instead of a 404. Static text only: no auth, no user info, no Impala access.
+@mcp.custom_route("/", methods=["GET"])
+@mcp.custom_route("/health", methods=["GET"])
+async def landing(request):
+    return PlainTextResponse("Cloudera Iceberg MCP server is running. MCP endpoint: /mcp\n")
 
 
 def _effective_user() -> str:

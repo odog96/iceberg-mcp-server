@@ -193,3 +193,14 @@ async def test_write_query_never_connects(server_url, keys, connections):
     res = await call(server_url, token(keys), "execute_query", {"query": "drop table t"})
     assert "read-only" in res.content[0].text
     assert connections == []
+
+
+@pytest.mark.parametrize("path", ["/", "/health"])
+async def test_landing_routes_are_public_and_static(server_url, connections, path):
+    import httpx
+
+    connections.clear()
+    r = httpx.get(server_url.removesuffix("/mcp") + path)
+    assert r.status_code == 200
+    assert "/mcp" in r.text
+    assert connections == []
