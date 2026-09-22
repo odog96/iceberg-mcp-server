@@ -6,8 +6,9 @@ Authentication dropdown: choose  OAuth Identity Passthrough  (custom OAuth)
 iceberg-mcp
 
 --- Remote MCP Server endpoint ---
-https://app2-mcp-e7b299.ml-946090b4-f27.se-sandb.a465-9q4k.cloudera.site/mcp
-(app2 checks real tokens. app1 is the older fixed-test-user app - do not point Foundry at it.)
+https://app1-mcp-9368e6.ml-946090b4-f27.se-sandb.a465-9q4k.cloudera.site/mcp
+(app1 checks real tokens - this is what Foundry's "iceber-mcp" connection already points at,
+no need to change it. app2 is now the legacy fixed-test-user app; do not point Foundry at it.)
 
 --- Client ID  (this is the iceberg-mcp-client app) ---
 ac7b4ab5-79c3-4962-9c9a-3131a90f2217
@@ -32,6 +33,7 @@ Foundry shows a redirect URL. Copy it, then in the Entra portal open iceberg-mcp
 Authentication > Add a platform > Web > paste it > Configure.
 
 --- Status ---
-app2 checks real Entra tokens and was verified end to end on 2026-09-22: no token -> 401,
-garbage token -> 401, a real token -> correct user in the query log. Safe to finish this
-connection and test through the agent.
+app1 checks real Entra tokens and was verified end to end on 2026-09-22 (after swapping roles
+with app2, since Azure does not allow editing an OAuth tool connection once created): no token
+-> 401, garbage token -> 401, a real token -> correct user (ozarate) in the query log.
+Safe to test through the Foundry agent now - no further change needed on the Foundry side.

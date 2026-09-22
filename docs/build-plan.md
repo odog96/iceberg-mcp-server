@@ -88,24 +88,37 @@ The Application config holds the password, so treat project access accordingly.
 While `MCP_TEST_USER` is set, anyone with the URL can run read-only queries as
 that user: stop the app when not testing.
 
-## app2: real Entra token validation, proven end to end
+## App roles swapped: app1 = real Entra checking, app2 = legacy fixed user
 
-2026-09-22, against the personal Entra tenant (`650a1000-e5e3-40bf-97a9-d62002a0934b`),
-alongside `app1` which stays on `MCP_TEST_USER` for regression checks.
+2026-09-22, after connecting Foundry: Azure does not allow editing an OAuth tool connection
+once created ("OAuth doesn't support updating the configuration"), and the Foundry connection
+had already been pointed at `app1`'s URL. Rather than recreate the Foundry connection, the two
+CML Applications' configs were swapped instead, so Foundry needed no further changes:
 
-- No token -> HTTP 401
-- Garbage token -> HTTP 401
-- Real token (device-code sign-in as oliverzarate@ymail.com) -> `get_schema` and
-  `execute_query` succeed, `effective_user()` returns `ozarate`
+| App | URL | Role |
+|---|---|---|
+| **app1** | `app1-mcp-9368e6...` | **Real Entra token checking.** This is what Foundry's `iceber-mcp` connection points at. |
+| app2 | `app2-mcp-e7b299...` | Legacy fixed test user (`MCP_TEST_USER=ozarate`), no token check. Regression reference. |
 
-Env vars that made it work (see `docs/entra-app-registration-checklist.md` for how the IDs
-were obtained):
+Verified end to end after the swap, with a fresh token (device-code sign-in as
+oliverzarate@ymail.com):
+- `app1` no token -> HTTP 401
+- `app1` garbage token -> HTTP 401
+- `app1` real token -> `get_schema` and `execute_query` succeed, `effective_user()` = `ozarate`.
+  Query tagged `swap-verify-145955` for the audit-log check.
+- `app2` still works with no token, fixed to `ozarate` (legacy behavior intact)
+
+Env vars (now on app1; see `docs/entra-app-registration-checklist.md` for how the IDs were
+obtained):
 ```
 ENTRA_TENANT_ID=650a1000-e5e3-40bf-97a9-d62002a0934b
 ENTRA_AUDIENCE=api://1217683d-abaf-41ff-bbf7-c53a0a8814a9
 ENTRA_ISSUER=https://sts.windows.net/650a1000-e5e3-40bf-97a9-d62002a0934b/
 USER_MAP=oliverzarate@ymail.com=ozarate
 ```
+
+Lesson for next time: decide the final CML Application URL *before* connecting it to a Foundry
+OAuth tool, since that connection can't be edited afterward, only replaced.
 
 Two surprises worth remembering:
 - **This tenant issues v1 tokens** (`ver: 1.0`, issuer `sts.windows.net/...`) even though the
