@@ -88,6 +88,34 @@ The Application config holds the password, so treat project access accordingly.
 While `MCP_TEST_USER` is set, anyone with the URL can run read-only queries as
 that user: stop the app when not testing.
 
+## app2: real Entra token validation, proven end to end
+
+2026-09-22, against the personal Entra tenant (`650a1000-e5e3-40bf-97a9-d62002a0934b`),
+alongside `app1` which stays on `MCP_TEST_USER` for regression checks.
+
+- No token -> HTTP 401
+- Garbage token -> HTTP 401
+- Real token (device-code sign-in as oliverzarate@ymail.com) -> `get_schema` and
+  `execute_query` succeed, `effective_user()` returns `ozarate`
+
+Env vars that made it work (see `docs/entra-app-registration-checklist.md` for how the IDs
+were obtained):
+```
+ENTRA_TENANT_ID=650a1000-e5e3-40bf-97a9-d62002a0934b
+ENTRA_AUDIENCE=api://1217683d-abaf-41ff-bbf7-c53a0a8814a9
+ENTRA_ISSUER=https://sts.windows.net/650a1000-e5e3-40bf-97a9-d62002a0934b/
+USER_MAP=oliverzarate@ymail.com=ozarate
+```
+
+Two surprises worth remembering:
+- **This tenant issues v1 tokens** (`ver: 1.0`, issuer `sts.windows.net/...`) even though the
+  server app's manifest was set to `requestedAccessTokenVersion: 2`. v1 tokens have no
+  `preferred_username`/`upn`; only `email` is present, which is why `USER_MAP` was needed
+  instead of the local-part default. Sofra's tenant may behave differently; check `ver` on a
+  real token before assuming v2.
+- `scripts/verify_real_token.py` checks a saved token against `identity.py` with no server or
+  CML deploy needed. Much faster than redeploying to catch issuer/audience mismatches.
+
 Remaining critical path: Track A -> run B1 -> deploy (B3) with `MCP_TEST_USER`
 -> switch to `ENTRA_*` and test with a real token (B5) -> B6.
 

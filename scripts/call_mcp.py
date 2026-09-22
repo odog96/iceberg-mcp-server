@@ -17,6 +17,8 @@ import os
 import sys
 from pathlib import Path
 
+import httpx
+
 from fastmcp import Client
 from fastmcp.client.auth import BearerAuth
 
@@ -44,8 +46,12 @@ async def main() -> int:
         print(json.dumps({k: claims.get(k) for k in ("iss", "aud", "exp", "preferred_username", "upn", "email", "ver")}, indent=2))
 
     tool_args = {"query": args.query} if args.tool == "execute_query" else {}
-    async with Client(args.url, auth=BearerAuth(args.token) if args.token else None) as c:
-        res = await c.call_tool(args.tool, tool_args)
+    try:
+        async with Client(args.url, auth=BearerAuth(args.token) if args.token else None) as c:
+            res = await c.call_tool(args.tool, tool_args)
+    except httpx.HTTPStatusError as e:
+        print(f"HTTP {e.response.status_code}: rejected by the server (bad/missing/expired token, or wrong audience/issuer)")
+        return 1
     print(res.content[0].text)
     return 0
 
