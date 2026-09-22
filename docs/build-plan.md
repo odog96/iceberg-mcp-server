@@ -88,17 +88,35 @@ The Application config holds the password, so treat project access accordingly.
 While `MCP_TEST_USER` is set, anyone with the URL can run read-only queries as
 that user: stop the app when not testing.
 
-## B6 done: real Foundry agent -> app1 -> Impala, end to end
+## B6 done and rigorously proven: real Foundry agent -> app1 -> Impala, end to end
 
-2026-09-22. After fixing the redirect-URI mismatch (see B5 note above) and a stale/expired
-consent-code retry, the actual Foundry agent (Copilot, personal tenant) successfully:
-- Signed in via OAuth Identity Passthrough (consent flow completed)
-- Called `get_schema`
-- Called `execute_query` with `DESCRIBE movies` and `DESCRIBE links`, both approved and run
+2026-09-22. First pass (get_schema, DESCRIBE movies, DESCRIBE links) came back with a
+plausible-looking answer, but a check of `sys.impala_query_log` showed **no corresponding
+queries reached Impala at all** in that window. The schema Copilot returned matched the
+well-known MovieLens column layout closely enough that it's plausible the model answered from
+its own training knowledge (given only 4 table names from a real `get_schema` call) rather than
+from genuine `DESCRIBE` results. Caveat for future demos: **this agent's tool-call claims are
+not automatically trustworthy — cross-check the audit log**, at least until this is better
+understood. Not a server-side problem: our own scripted calls always show up in the log
+immediately (sub-second).
 
-This is the customer requirement from section 1 closed: an external chatbot querying Cloudera
-data through the MCP server with per-user identity, no shared service account. Still to
-manually confirm: the Impala query log shows these DESCRIBE calls attributed to `ozarate`.
+To rule out fabrication/cache definitively, asked Copilot to run a query with an answer no LLM
+could guess or remember: `SELECT effective_user(), now()`. Result, cross-referenced against
+`sys.impala_query_log` in real time via a live poll:
+
+| Source | Value |
+|---|---|
+| Copilot's chat reply | `effective_user(): ozarate`, `now(): 2026-09-22 16:55:16.447978` |
+| `sys.impala_query_log` (independent, queried live) | `ozarate`, `srv_srv_mcp_proxy`, `2026-09-22 16:55:16.448073`, `SELECT effective_user(),now()` |
+
+Match to within 95 microseconds (query-submission vs. execution-time skew) — not fabricable.
+This is the customer requirement from section 1, proven end to end: a real external chatbot
+(Foundry/Copilot) queries Cloudera through the MCP server, and the individual end user
+(`ozarate`, not the machine user `srv_srv_mcp_proxy`) shows up in Impala's own audit log.
+
+Useful technique for future spot-checks: `sys.impala_query_log` (columns include `db_user`,
+`db_user_connection`, `sql`, `start_time_utc`) can be queried directly instead of hunting
+through a portal UI — same connection path as everything else in this repo.
 
 ## App roles swapped: app1 = real Entra checking, app2 = legacy fixed user
 
