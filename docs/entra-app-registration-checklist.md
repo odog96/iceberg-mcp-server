@@ -78,9 +78,18 @@ Breadcrumb/title must say **iceberg-mcp-client** before you do any of these.
       Client secret field. Verified via screenshot showing "Client secrets (1)" with a row
       present (the first pass had "Client secrets (0)" despite believing this was done —
       always check this count, not just whether you remember doing it).
-- [x] **B5. Foundry redirect URL.** Authentication (Preview) > **Redirect URI configuration**
-      tab. Confirm `https://global.consent.azure-apim.net/redirect/9e7a7a930b29482a9ff0291aaf0aa410`
-      is listed under **Web**. Verified via screenshot.
+- [x] **B5. Foundry redirect URL(s).** Authentication (Preview) > **Redirect URI configuration**
+      tab, as **Web** entries. **Confirmed: every new or recreated Foundry OAuth tool
+      connection mints its own unique redirect URL** (the GUID at the end of
+      `https://global.consent.azure-apim.net/redirect/<guid>` differs per connection, not per
+      client app or project). Azure also does not allow editing an OAuth connection once
+      created, so a new connection is common. Each time you create or recreate a Foundry
+      connection for this tool: **ADD its redirect URL as a new Web entry, don't remove the
+      old ones** — Entra allows multiple. Skipping this gives `AADSTS50011: redirect URI
+      mismatch` on first sign-in, with the mismatched URL visible right in the error page.
+      Known redirect URLs added so far:
+      - `.../redirect/9e7a7a930b29482a9ff0291aaf0aa410` (first connection, pointed at old app1)
+      - `.../redirect/6fe68cb71a2a4029b75a88132ac4d97e` (second connection, `iceber-mcp`)
 
 ## After both parts: verify before touching Foundry
 - [x] **6. Get a real token and check it against our code, no deploy needed:**
