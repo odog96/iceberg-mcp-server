@@ -88,6 +88,18 @@ The Application config holds the password, so treat project access accordingly.
 While `MCP_TEST_USER` is set, anyone with the URL can run read-only queries as
 that user: stop the app when not testing.
 
+## B6 done: real Foundry agent -> app1 -> Impala, end to end
+
+2026-09-22. After fixing the redirect-URI mismatch (see B5 note above) and a stale/expired
+consent-code retry, the actual Foundry agent (Copilot, personal tenant) successfully:
+- Signed in via OAuth Identity Passthrough (consent flow completed)
+- Called `get_schema`
+- Called `execute_query` with `DESCRIBE movies` and `DESCRIBE links`, both approved and run
+
+This is the customer requirement from section 1 closed: an external chatbot querying Cloudera
+data through the MCP server with per-user identity, no shared service account. Still to
+manually confirm: the Impala query log shows these DESCRIBE calls attributed to `ozarate`.
+
 ## App roles swapped: app1 = real Entra checking, app2 = legacy fixed user
 
 2026-09-22, after connecting Foundry: Azure does not allow editing an OAuth tool connection
