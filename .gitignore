@@ -40,3 +40,4 @@ screenshot*.png
 
 # Jupyter
 .ipynb_checkpoints/
+scratch/
