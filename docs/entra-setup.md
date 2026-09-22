@@ -1,112 +1,80 @@
-# Entra setup for the MCP server (background runbook)
+# Entra background (read-only reference)
 
-> **To do the work, use `entra-app-registration-checklist.md`.** It has the current status, the
-> exact order, and the B1-B5 steps. This file is background reading and step numbers differ.
+> **To do the work, use `entra-app-registration-checklist.md`.** This file has no steps to
+> execute and deliberately uses no step numbers, so it can't drift out of sync with the
+> checklist's numbering again.
 
-Purpose: get real Entra ID tokens that the MCP server can validate, in a test tenant first
-and then in Sofra's tenant. The same steps apply to both; only the IDs and domain change.
+## Why two app registrations
+An MCP server behind OAuth needs two separate Entra apps:
+- **The API app** (`iceberg-mcp-server`): defines what a token "for this server" means. Its
+  Application ID URI (`api://<id>`) is the audience our server checks tokens against.
+- **The client app** (`iceberg-mcp-client`): what the user actually signs in through — Foundry,
+  or our `get_entra_token.py` test script. It holds the client secret and the redirect URI.
 
-Portal: https://entra.microsoft.com (or Azure portal > Microsoft Entra ID).
-Portal labels drift between releases. Items marked **(verify)** are from general knowledge
-and have not been checked against a live tenant. Client secrets: the Foundry connection (section 9) needs one. It is entered only into
-Foundry, never pasted into chat, docs or git.
+Confusing the two is the single most common mistake (see the checklist's "what tripped us up"
+section) because their names differ by one word and their Overview pages look identical.
 
-## 0. Identify the tenant
-Overview page: note **Tenant ID** and **Primary domain** (`<name>.onmicrosoft.com`).
+## Why OAuth Identity Passthrough, not "Microsoft Entra" or key-based
+Foundry's MCP tool connector offers four auth methods. Per Microsoft's docs
+(https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/mcp-authentication):
 
-## 1. Create test users (skip in Sofra's tenant: use their real users)
-Identity > Users > All users > New user > Create new user. Create one per Cloudera user:
-`ozarate`, `jgaragorry`, `fcobo`, `jcaseiro`.
-- User principal name: `<cloudera-username>@<primary-domain>`. The part before `@` must
-  equal the Cloudera username exactly, in lowercase: the server maps `jcaseiro@x` to `jcaseiro`.
-- Auto-generate the password and keep it privately; do not paste it into chat or commit it.
-- Account enabled: yes.
-- Heads-up: users must change the password at first sign-in, and a new tenant usually has
-  **security defaults** on, which forces MFA registration at first sign-in. For a throwaway
-  test tenant you may turn that off (Identity > Overview > Properties > Manage security
-  defaults). Do not do this in a real tenant.
-
-## 2. Register the MCP server (the API)
-Identity > Applications > App registrations > New registration.
-- Name: `iceberg-mcp-server`
-- Supported account types: **Single tenant** (this directory only)
-- Redirect URI: leave empty
-Register, then copy **Application (client) ID** from the overview page.
-
-## 3. Expose an API
-On that app: Manage > Expose an API.
-- Application ID URI: Add > accept the default `api://<client-id>` > Save.
-- Add a scope: name `access_as_user`, who can consent: **Admins and users**, display name
-  and description e.g. "Access the Iceberg MCP server as the signed-in user", state
-  **Enabled**.
-
-## 4. Make it issue v2 tokens
-Manage > Manifest. Set the access token version to 2 and save.
-- Microsoft Graph manifest format: `"api": { "requestedAccessTokenVersion": 2 }`
-- Older AAD Graph format: `"accessTokenAcceptedVersion": 2`
-This decides the `iss` and `aud` formats. The server's default expects v2. **(verify)**
-
-## 5. Optional claims
-Manage > Token configuration > Add optional claim > token type **Access** > tick `email`
-and `upn` > Add (accept the prompt to enable the Graph email permission if shown).
-`preferred_username` should already be present in v2 tokens. **(verify)** The server tries
-`preferred_username`, then `upn`, then `email`.
-
-## 6. Register the client (used by Foundry, and by our test script)
-New registration, name `iceberg-mcp-client`, single tenant. Then:
-- Certificates & secrets > New client secret. Copy the value once, straight into Foundry
-  (section 9). Note its expiry date.
-- Authentication (or its Settings tab) > **Allow public client flows: Yes** > Save.
-  This also enables the device-code login used by `scripts/get_entra_token.py`, which lets
-  us test the server with a real token before involving Foundry.
-- Section 9 later adds a Web redirect URI that Foundry gives you.
-- API permissions > Add a permission > My APIs > `iceberg-mcp-server` > Delegated
-  permissions > tick `access_as_user` > Add.
-- Click **Grant admin consent for <tenant>** so users are not prompted.
-Copy this app's **Application (client) ID**.
-
-## 7. Values to hand over (none are secrets)
-| Value | Where it comes from | Used as |
+| Method | Whose identity the MCP server sees | Per-user? |
 |---|---|---|
-| Tenant ID | step 0 | `ENTRA_TENANT_ID` |
-| MCP server client ID | step 2 | basis for `ENTRA_AUDIENCE` (confirm against a decoded token) |
-| Scope | `api://<mcp-server-client-id>/access_as_user` | requested by the token script |
-| Client app ID | step 6 | Foundry "Client ID" and the token script |
-| Primary domain | step 0 | test user names |
+| Key-based | One shared static credential | No |
+| Microsoft Entra (agent identity / project managed identity) | The agent or project itself | No |
+| **OAuth Identity Passthrough** | Each signed-in user | **Yes** |
+| Unauthenticated | Nobody | No |
 
-## 8. Verify
-Get a token with `scripts/get_entra_token.py`, then decode it with
-`scripts/call_mcp.py --claims`. Compare against the server's settings:
-- `iss` equals `https://login.microsoftonline.com/<tenant-id>/v2.0`
-  (v1 tokens use `https://sts.windows.net/<tenant-id>/`: set `ENTRA_ISSUER` if so)
-- `aud` equals `ENTRA_AUDIENCE` (often the client ID GUID on v2, not the `api://` URI)
-- `preferred_username` (or `upn`/`email`) is present and its local part is the Cloudera user
-- `ver` is `2.0`
+The whole point of this project is per-user audit attribution, so only OAuth Identity
+Passthrough works. "Microsoft Entra" sounds closer to what we want but issues a token for the
+*agent*, with no user in it — our server would (correctly) reject it as unmappable.
 
-## 9. Connect Foundry (custom OAuth identity passthrough)
-Foundry portal > Tools > add Model Context Protocol tool. Authentication: **OAuth Identity
-Passthrough** > custom OAuth. Do NOT pick "Microsoft Entra" (agent identity / project managed
-identity) or key-based: per Microsoft's docs those are shared identities where the user context
-does not persist, so the server would never see who is asking.
+Custom OAuth (bring-your-own app registration) is required rather than Foundry's managed
+OAuth, because Microsoft's managed OAuth restricts tokens scoped to a Microsoft-owned audience
+from being sent to third-party MCP servers. Our server needs to be its own audience.
 
-| Foundry field | Value |
+## Token version: expect v1 from a personal tenant
+Setting the server app's manifest to `requestedAccessTokenVersion: 2` is supposed to make
+Entra issue v2 access tokens (`iss: https://login.microsoftonline.com/<tenant>/v2.0`, with
+`preferred_username`/`upn` claims). On the personal/trial tenant used for this POC, tokens
+still came back as v1 (`iss: https://sts.windows.net/<tenant>/`, `ver: 1.0`) after that setting
+was saved. v1 tokens carry `email` but not `preferred_username`/`upn`.
+
+Our server handles both: `ENTRA_ISSUER` can be set to either form, and `USER_MAP` lets you map
+an arbitrary identity claim value to a Cloudera username when the local-part-of-email
+convention doesn't produce the right name (e.g. a personal `@ymail.com` address). Don't assume
+which version a given tenant will issue — check with `scripts/verify_real_token.py` against a
+real token before configuring anything.
+
+Corporate tenants (e.g. Sofra's) may behave differently — check `ver` on one of their real
+tokens rather than assuming either outcome.
+
+## Identity mapping strategy
+Two independent options, both implemented in `identity.py`:
+- **Local-part-of-email** (default): `ozarate@corp.com` -> `ozarate`. Works when the token
+  identity's local part already matches the Cloudera username.
+- **`USER_MAP`**: explicit `identity=cloudera_user` pairs. Required when it doesn't (personal
+  accounts, different naming conventions). When set, it's exclusive — an identity not listed
+  is rejected, with no local-part fallback.
+
+`ALLOWED_USERS` is a further restriction on top of either: a mapped user not in the list is
+still rejected.
+
+## Values used in this POC
+| Item | Value |
 |---|---|
-| Remote MCP Server endpoint | `https://<app-subdomain>.<cdsw-domain>/mcp` |
-| Client ID | client app ID (step 6) |
-| Client secret | the secret from step 6 |
-| Auth URL | `https://login.microsoftonline.com/<tenant-id>/oauth2/v2.0/authorize` |
-| Token URL | `https://login.microsoftonline.com/<tenant-id>/oauth2/v2.0/token` |
-| Refresh URL | same as Token URL |
-| Scopes | `api://<mcp-server-client-id>/access_as_user offline_access` (single space, no comma) |
+| Tenant ID | `650a1000-e5e3-40bf-97a9-d62002a0934b` |
+| `iceberg-mcp-server` client ID | `1217683d-abaf-41ff-bbf7-c53a0a8814a9` |
+| `iceberg-mcp-client` client ID | `ac7b4ab5-79c3-4962-9c9a-3131a90f2217` |
+| Scope | `api://1217683d-abaf-41ff-bbf7-c53a0a8814a9/access_as_user` |
 
-After connecting, Foundry shows a **redirect URL**. Add it to the client app: Authentication >
-Add a platform > Web > paste it.
-
-Constraints from Microsoft's docs:
-- The signed-in user's Entra tenant must match the Foundry project's tenant.
-- Users need at least the **Foundry Agent Consumer** role on the project.
-- The MCP server's audience must be one you control (our own app registration), which is why
-  custom OAuth is required.
-- Each user is prompted once per tool to consent (`oauth_consent_request`).
+## Reusing this for Sofra's tenant
+Same two-app pattern, different tenant. Differences to expect:
+- Real corporate users instead of a personal-tenant self-registration — no need to invent a
+  `USER_MAP` entry if their email local part already matches Cloudera usernames.
+- Their tenant may honor v2 tokens where this one didn't; check `ver`, don't assume.
+- An actual Entra admin may be needed for admin consent (B2b) if you aren't one there.
+- The Foundry project must be in the same tenant as the signed-in users (cross-tenant token
+  exchange isn't supported), and users need at least the **Foundry Agent Consumer** role.
 
 Source: https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/mcp-authentication

@@ -6,7 +6,8 @@ Authentication dropdown: choose  OAuth Identity Passthrough  (custom OAuth)
 iceberg-mcp
 
 --- Remote MCP Server endpoint ---
-https://app1-mcp-9368e6.ml-946090b4-f27.se-sandb.a465-9q4k.cloudera.site/mcp
+https://app2-mcp-e7b299.ml-946090b4-f27.se-sandb.a465-9q4k.cloudera.site/mcp
+(app2 checks real tokens. app1 is the older fixed-test-user app - do not point Foundry at it.)
 
 --- Client ID  (this is the iceberg-mcp-client app) ---
 ac7b4ab5-79c3-4962-9c9a-3131a90f2217
@@ -30,6 +31,7 @@ api://1217683d-abaf-41ff-bbf7-c53a0a8814a9/access_as_user offline_access
 Foundry shows a redirect URL. Copy it, then in the Entra portal open iceberg-mcp-client:
 Authentication > Add a platform > Web > paste it > Configure.
 
---- Order reminder ---
-Do not finish this connection until Claude has switched app1 to real token checking.
-Until then app1 accepts any request, so a working call would prove nothing.
+--- Status ---
+app2 checks real Entra tokens and was verified end to end on 2026-09-22: no token -> 401,
+garbage token -> 401, a real token -> correct user in the query log. Safe to finish this
+connection and test through the agent.
