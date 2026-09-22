@@ -14,6 +14,13 @@ wheels/
 .env.*
 impala_details.txt
 impala_*.txt
+azure-creds.txt
+azure-creds*.txt
+archive-dump-later/
+Screenshot*.png
+screenshot*.png
+*.png
+!chat_w_ur_data_Arch.png
 *.pem
 *.key
 *credentials*.json
