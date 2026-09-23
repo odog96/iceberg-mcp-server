@@ -118,6 +118,23 @@ Useful technique for future spot-checks: `sys.impala_query_log` (columns include
 `db_user_connection`, `sql`, `start_time_utc`) can be queried directly instead of hunting
 through a portal UI — same connection path as everything else in this repo.
 
+## whoami: proving what the agent actually sends
+
+2026-09-23. A colleague questioned whether Azure sends a token at all. Evidence so far was
+indirect (app1 refuses calls with no/bad token, yet the Foundry agent's calls succeeded as
+`ozarate`). To show it directly, `app1` now runs with `MCP_ENABLE_WHOAMI=1`, which adds a
+`whoami` tool. It returns the verified token's non-secret details: issuer, audience, calling app
+id, token version, granted scope, sign-in methods, issue/expiry times, identity claims, and the
+mapped Cloudera user. It never returns the token, and omits object id, subject, IP and session ids.
+
+Demo: ask the Foundry agent "Use the iceberg-mcp tool called whoami and show me exactly what it
+returns." (A new chat may be needed so the agent picks up the new tool.) Expected: `token_received`
+true, `requesting_app_id` = `ac7b4ab5-79c3-4962-9c9a-3131a90f2217` (our client app, i.e. Foundry's
+sign-in), `audience` = `api://1217683d-...`, `mapped_cloudera_user` = `ozarate`.
+
+Also added, off by default: `ENTRA_REQUIRED_SCOPE=access_as_user` rejects tokens that lack that
+permission. Turn it on after `whoami` confirms Foundry's token carries `scp: access_as_user`.
+
 ## App roles swapped: app1 = real Entra checking, app2 = legacy fixed user
 
 2026-09-22, after connecting Foundry: Azure does not allow editing an OAuth tool connection

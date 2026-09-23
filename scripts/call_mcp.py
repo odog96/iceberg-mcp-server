@@ -31,7 +31,7 @@ def decode_claims(token: str) -> dict:
 async def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("url")
-    ap.add_argument("tool", choices=["get_schema", "execute_query"])
+    ap.add_argument("tool", choices=["get_schema", "execute_query", "whoami"])
     ap.add_argument("--query")
     ap.add_argument("--token", default=os.getenv("TOKEN"))
     ap.add_argument("--token-file", help="read the bearer token from this file (keeps it out of shell history)")

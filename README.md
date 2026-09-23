@@ -22,6 +22,8 @@ This fork is deployed as a Cloudera Machine Learning (CML) Application using `st
 | `ENTRA_ISSUER`, `ENTRA_JWKS_URI` | Optional overrides (default to the v2.0 issuer/keys for the tenant; use `https://sts.windows.net/<tenant>/` for v1 tokens) |
 | `ENTRA_USER_CLAIMS` | Claims tried in order for identity (default `preferred_username,upn,email`); the local part becomes the Cloudera username |
 | `USER_MAP` | Optional `identity=cloudera_user` pairs (comma-separated) for tokens whose identity is not a Cloudera name. When set it is exclusive: unlisted identities are rejected |
+| `ENTRA_REQUIRED_SCOPE` | Optional. If set (e.g. `access_as_user`), tokens without that permission are rejected. Off by default: turn on after `whoami` shows what real callers send |
+| `MCP_ENABLE_WHOAMI` | Optional. `1` adds a `whoami` tool that shows non-secret details of the caller's verified token (never the token). For demos and debugging |
 | `ALLOWED_USERS` | Optional comma-separated allowlist of Cloudera usernames |
 | `MCP_TEST_USER` | **Test deployments only:** skip token validation and run every call as this user. Ignored when `ENTRA_*` is set |
 
