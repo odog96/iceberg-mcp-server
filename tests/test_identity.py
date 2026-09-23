@@ -82,3 +82,63 @@ def test_user_map_respects_allowlist(monkeypatch):
     monkeypatch.setenv("ALLOWED_USERS", "jcaseiro")
     with pytest.raises(identity.IdentityError):
         identity.map_claims_to_user({"preferred_username": "me@corp.com"})
+
+
+# --- whoami / describe_caller -------------------------------------------------
+
+import time
+from types import SimpleNamespace
+
+
+def _fake_token(**extra):
+    now = int(time.time())
+    claims = {
+        "iss": "https://sts.windows.net/t/", "aud": "api://x", "appid": "client-app", "ver": "1.0",
+        "scp": "access_as_user", "amr": ["pwd", "mfa"], "iat": now, "exp": now + 3600,
+        "email": "me@corp.com",
+        # things that must NOT be echoed back
+        "oid": "OBJECT-ID", "sub": "SUBJECT", "ipaddr": "1.2.3.4", "aio": "OPAQUE", "sid": "SESSION",
+    }
+    claims.update(extra)
+    return SimpleNamespace(claims=claims, token="RAW.TOKEN.VALUE")
+
+
+def test_whoami_enabled_flag(monkeypatch):
+    assert identity.whoami_enabled() is False
+    monkeypatch.setenv("MCP_ENABLE_WHOAMI", "1")
+    assert identity.whoami_enabled() is True
+
+
+def test_describe_caller_shows_verified_details(monkeypatch):
+    monkeypatch.setenv("USER_MAP", "me@corp.com=ozarate")
+    out = identity.describe_caller(_fake_token())
+    assert out["token_received"] is True
+    assert out["issuer"] == "https://sts.windows.net/t/"
+    assert out["audience"] == "api://x"
+    assert out["requesting_app_id"] == "client-app"
+    assert out["granted_scope"] == "access_as_user"
+    assert out["identity_in_token"] == {"email": "me@corp.com"}
+    assert out["mapped_cloudera_user"] == "ozarate"
+    assert 58 <= out["minutes_until_expiry"] <= 60
+    assert out["raw_token_included"] is False
+
+
+def test_describe_caller_never_leaks_secrets_or_extra_identifiers(monkeypatch):
+    monkeypatch.setenv("USER_MAP", "me@corp.com=ozarate")
+    dumped = str(identity.describe_caller(_fake_token()))
+    for leaked in ("RAW.TOKEN.VALUE", "OBJECT-ID", "SUBJECT", "1.2.3.4", "OPAQUE", "SESSION"):
+        assert leaked not in dumped
+
+
+def test_describe_caller_reports_unmapped_user(monkeypatch):
+    monkeypatch.setenv("USER_MAP", "someone@else.com=ozarate")
+    out = identity.describe_caller(_fake_token())
+    assert out["mapped_cloudera_user"] is None
+    assert "not permitted" in out["mapping_result"]
+
+
+def test_describe_caller_without_token_is_test_mode_or_unauthenticated(monkeypatch):
+    assert identity.describe_caller(None)["cloudera_user"] is None
+    monkeypatch.setenv("MCP_TEST_USER", "ozarate")
+    out = identity.describe_caller(None)
+    assert out["token_received"] is False and out["cloudera_user"] == "ozarate"

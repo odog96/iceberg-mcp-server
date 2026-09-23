@@ -59,6 +59,18 @@ def get_schema() -> str:
     return impala_tools.get_schema(_effective_user())
 
 
+if identity.whoami_enabled():
+
+    @mcp.tool()
+    def whoami() -> dict:
+        """
+        Diagnostic: show what this server received and verified for the current caller
+        (issuer, audience, calling app, granted scope, expiry, identity, mapped Cloudera user).
+        The token itself is never shown.
+        """
+        return identity.describe_caller(get_access_token())
+
+
 def main():
     transport = os.getenv("MCP_TRANSPORT", "stdio")
     if identity.auth_configured():
@@ -71,6 +83,8 @@ def main():
             "Refusing to start: set ENTRA_TENANT_ID and ENTRA_AUDIENCE (production) "
             "or MCP_TEST_USER (test deployments only)"
         )
+    if identity.whoami_enabled():
+        print("NOTE: whoami diagnostic tool is enabled (shows token details, never the token itself)")
     print(f"Starting Iceberg MCP Server via transport: {transport}")
     mcp.run(transport=transport)
 

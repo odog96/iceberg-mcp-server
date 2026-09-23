@@ -69,6 +69,7 @@ def server_url(jwks_url, connections):
     mp.setenv("ENTRA_AUDIENCE", AUDIENCE)
     mp.setenv("ENTRA_JWKS_URI", jwks_url)
     mp.setenv("ALLOWED_USERS", "ozarate,jgaragorry")
+    mp.setenv("MCP_ENABLE_WHOAMI", "1")
 
     from iceberg_mcp_server import server
     from iceberg_mcp_server.tools import impala_tools
@@ -204,3 +205,43 @@ async def test_landing_routes_are_public_and_static(server_url, connections, pat
     assert r.status_code == 200
     assert "/mcp" in r.text
     assert connections == []
+
+
+async def test_whoami_tool_shows_what_the_server_verified(server_url, keys, connections):
+    tok = token(keys, preferred_username="jgaragorry@corp.com", scp="access_as_user", appid="client-app-id")
+    res = await call(server_url, tok, "whoami")
+    out = json.loads(res.content[0].text)
+    assert out["token_received"] is True
+    assert out["issuer"] == ISSUER and out["audience"] == AUDIENCE
+    assert out["requesting_app_id"] == "client-app-id"
+    assert out["granted_scope"] == "access_as_user"
+    assert out["mapped_cloudera_user"] == "jgaragorry"
+    assert tok not in res.content[0].text  # the token itself is never returned
+
+
+async def test_whoami_requires_a_valid_token(server_url, connections):
+    with pytest.raises(Exception):
+        await call(server_url, None, "whoami")
+
+
+async def test_required_scope_is_enforced_when_configured(jwks_url, keys, monkeypatch):
+    monkeypatch.setenv("ENTRA_TENANT_ID", TENANT)
+    monkeypatch.setenv("ENTRA_AUDIENCE", AUDIENCE)
+    monkeypatch.setenv("ENTRA_JWKS_URI", jwks_url)
+    monkeypatch.setenv("ENTRA_REQUIRED_SCOPE", "access_as_user")
+    from iceberg_mcp_server import identity
+
+    verifier = identity.build_verifier()
+    assert await verifier.verify_token(token(keys, scp="access_as_user")) is not None
+    assert await verifier.verify_token(token(keys, scp="something_else")) is None
+    assert await verifier.verify_token(token(keys)) is None  # no scope at all
+
+
+async def test_scope_not_enforced_by_default(jwks_url, keys, monkeypatch):
+    monkeypatch.setenv("ENTRA_TENANT_ID", TENANT)
+    monkeypatch.setenv("ENTRA_AUDIENCE", AUDIENCE)
+    monkeypatch.setenv("ENTRA_JWKS_URI", jwks_url)
+    monkeypatch.delenv("ENTRA_REQUIRED_SCOPE", raising=False)
+    from iceberg_mcp_server import identity
+
+    assert await identity.build_verifier().verify_token(token(keys)) is not None
