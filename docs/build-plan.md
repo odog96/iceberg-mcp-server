@@ -160,7 +160,7 @@ CML Applications' configs were swapped instead, so Foundry needed no further cha
 | App | URL | Role |
 |---|---|---|
 | **app1** | `app1-mcp-9368e6...` | **Real Entra token checking.** This is what Foundry's `iceber-mcp` connection points at. |
-| app2 | (address deliberately not recorded here) | Legacy fixed test user (`MCP_TEST_USER=ozarate`), no token check. Regression reference. |
+| app2 | (address deliberately not recorded here) | Legacy fixed test user (`MCP_TEST_USER=ozarate`), no token check. **Stopped 2026-09-24** because the repo is public and this app has no access control; restart it from the Applications page only when needed, then stop it again. |
 
 Verified end to end after the swap, with a fresh token (device-code sign-in as
 oliverzarate@ymail.com):
