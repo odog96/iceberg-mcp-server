@@ -4,9 +4,13 @@ connection would run as."""
 
 import http.server
 import json
+import os
+import shutil
 import socket
+import subprocess
 import threading
 import time
+from pathlib import Path
 
 import jwt
 import pytest
@@ -245,3 +249,53 @@ async def test_scope_not_enforced_by_default(jwks_url, keys, monkeypatch):
     from iceberg_mcp_server import identity
 
     assert await identity.build_verifier().verify_token(token(keys)) is not None
+
+
+# --- scripts/curl_mcp.sh: the same server, checked with plain curl ---------------------------
+
+CURL_SCRIPT = str(Path(__file__).resolve().parent.parent / "scripts" / "curl_mcp.sh")
+needs_curl = pytest.mark.skipif(shutil.which("curl") is None, reason="curl not installed")
+
+
+def run_curl_script(args, **env_extra):
+    env = {k: v for k, v in os.environ.items() if k not in ("TOKEN", "TOKEN_FILE")}
+    env.update(env_extra)
+    return subprocess.run([CURL_SCRIPT, *args], env=env, capture_output=True, text=True, timeout=90)
+
+
+@needs_curl
+async def test_curl_script_lists_tools_with_a_valid_token(server_url, keys):
+    out = run_curl_script([server_url, "list"], TOKEN=token(keys, scp="access_as_user"))
+    assert out.returncode == 0, out.stderr
+    for name in ("get_schema", "execute_query", "whoami"):
+        assert name in out.stdout
+
+
+@needs_curl
+async def test_curl_script_calls_a_tool_and_shows_the_mapped_user(server_url, keys):
+    tok = token(keys, preferred_username="jgaragorry@corp.com", scp="access_as_user")
+    out = run_curl_script([server_url, "call", "whoami"], TOKEN=tok)
+    assert out.returncode == 0, out.stderr
+    assert "jgaragorry" in out.stdout
+    assert tok not in out.stdout
+
+
+@needs_curl
+async def test_curl_script_reads_the_token_from_a_file(server_url, keys, tmp_path):
+    f = tmp_path / "tok"
+    f.write_text(token(keys, scp="access_as_user") + "\n")
+    out = run_curl_script([server_url, "list"], TOKEN_FILE=str(f))
+    assert out.returncode == 0, out.stderr
+
+
+@needs_curl
+async def test_curl_script_explains_a_401_without_a_token(server_url):
+    out = run_curl_script([server_url, "list"])
+    assert out.returncode == 1
+    assert "HTTP 401" in out.stderr
+
+
+@needs_curl
+async def test_curl_script_health_needs_no_token(server_url):
+    out = run_curl_script([server_url, "health"])
+    assert out.returncode == 0 and "HTTP 200" in out.stdout

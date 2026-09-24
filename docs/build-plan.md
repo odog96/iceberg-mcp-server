@@ -118,6 +118,21 @@ Useful technique for future spot-checks: `sys.impala_query_log` (columns include
 `db_user_connection`, `sql`, `start_time_utc`) can be queried directly instead of hunting
 through a portal UI — same connection path as everything else in this repo.
 
+## Reproducible deploy and curl check
+
+2026-09-24. `.project-metadata.yaml` (format checked against Cloudera's AMP project specification,
+https://docs.cloudera.com/machine-learning/cloud/applied-ml-prototypes/topics/ml-amp-project-spec.html)
+deploys the unauthenticated test version in a new workspace: installs dependencies, creates (but does
+not run) an optional sample-data job, and starts the application with `bypass_authentication: true`.
+Variables it asks for are the `IMPALA_*` connection settings plus `MCP_TEST_USER`. It never sets
+`ENTRA_*`, and `tests/test_project_metadata.py` enforces that, along with the script paths, required
+task fields and the "no password default" rule. **Not yet imported into a second workspace**, so
+treat the first import as the real test.
+
+`scripts/curl_mcp.sh` checks any MCP server with plain curl (health, list tools, call a tool, with an
+optional bearer token). Verified live against the fixed-user app, against the token-checking app
+(clear 401 message) and by automated tests against the local test server, including the token path.
+
 ## whoami: proving what the agent actually sends
 
 2026-09-23. A colleague questioned whether Azure sends a token at all. Evidence so far was

@@ -1,0 +1,74 @@
+name: Iceberg MCP Server for Impala (test mode)
+description: >-
+  MCP server that lets an AI agent query Apache Impala tables through a trusted machine user
+  that impersonates an end user (doAs). This template deploys the UNAUTHENTICATED TEST version:
+  every caller runs as the single Cloudera user set in MCP_TEST_USER, and no token is checked.
+  Use it to get a working, read-only MCP endpoint quickly. For per-user identity (validating
+  Entra ID tokens), see docs/entra-app-registration-checklist.md and README.md.
+author: Oliver Zarate
+specification_version: 1.0
+prototype_version: 1.0
+date: "2026-09-24"
+
+runtimes:
+  - editor: PBJ Workbench
+    kernel: Python 3.12
+    edition: Standard
+
+environment_variables:
+  IMPALA_HOST:
+    default: ""
+    description: "Impala coordinator host, without https:// (from the Virtual Warehouse in Cloudera Data Warehouse)."
+    required: true
+  IMPALA_PORT:
+    default: "443"
+    description: "Impala HTTP port. Leave at 443 for Cloudera Data Warehouse."
+    required: false
+  IMPALA_USER:
+    default: ""
+    description: "Machine user that logs in to Impala. It must be allowed to impersonate MCP_TEST_USER (authorized_proxy_user_config)."
+    required: true
+  IMPALA_PASSWORD_B64:
+    default: ""
+    description: "Base64 of the machine user's workload password. Create it with: printf %s 'YOUR_PASSWORD' | base64 -w0 (base64 avoids special characters being mangled)."
+    required: true
+  IMPALA_DATABASE:
+    default: "default"
+    description: "Database the server queries. Use mcp_demo after running the optional sample-data job."
+    required: false
+  MCP_TEST_USER:
+    default: ""
+    description: "Cloudera username every request runs as (the server does NOT check tokens in this template). Must be allowed by the machine user's proxy config and have Ranger access to your tables."
+    required: true
+
+tasks:
+  - type: run_session
+    name: Install dependencies
+    script: scripts/install_deps.py
+    kernel: python3
+    cpu: 1
+    memory: 2
+
+  - type: create_job
+    name: Load MovieLens sample data (optional)
+    entity_label: load_sample_data
+    script: scripts/setup_sample_data.py
+    kernel: python3
+    cpu: 1
+    memory: 2
+    short_summary: Optional. Creates a small demo database (mcp_demo, about 124k rows) as MCP_TEST_USER.
+    long_summary: >-
+      Not run automatically because it writes to your warehouse. Run it from the Jobs page if you
+      want sample data (the user needs permission to create a database). Then set IMPALA_DATABASE
+      to mcp_demo in the project settings and restart the application. Data: MovieLens latest-small
+      from GroupLens Research, licensed for non-commercial research and demo use only.
+
+  - type: start_application
+    name: Iceberg MCP Server (test mode, no token check)
+    description: MCP endpoint at /mcp. Anyone with the URL can run read-only queries as MCP_TEST_USER, so stop it when not in use.
+    subdomain: iceberg-mcp
+    script: start_mcp.py
+    kernel: python3
+    cpu: 1
+    memory: 2
+    bypass_authentication: true

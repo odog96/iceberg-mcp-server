@@ -11,6 +11,55 @@ Both tools run as the **end user**: the server validates the caller's Entra ID b
 
 This fork is deployed as a Cloudera Machine Learning (CML) Application using `start_mcp.py`, which installs the package with `pip` and serves MCP over HTTP. See `docs/build-plan.md` for the architecture, setup runbook and build steps.
 
+## Deploy on Cloudera AI (quick start, test mode)
+
+`.project-metadata.yaml` turns this repo into a Cloudera AI project template. It deploys the
+**unauthenticated test version**: every caller runs as one fixed Cloudera user and no token is
+checked. (For per-user identity with Entra ID tokens, see `docs/entra-app-registration-checklist.md`.)
+
+1. In Cloudera AI: **New Project > Git**, paste this repo's URL, then **Configure Project**.
+2. Fill in the environment variables it asks for:
+
+   | Variable | What to enter |
+   |---|---|
+   | `IMPALA_HOST` | Impala coordinator host, no `https://` |
+   | `IMPALA_USER` | The machine user that logs in to Impala |
+   | `IMPALA_PASSWORD_B64` | Its password, base64-encoded: `printf %s 'PASSWORD' | base64 -w0` |
+   | `MCP_TEST_USER` | The Cloudera user every request runs as |
+   | `IMPALA_PORT`, `IMPALA_DATABASE` | Defaults are `443` and `default` |
+
+3. Launch. It installs dependencies, creates an optional sample-data job (not run automatically),
+   and starts the application **Iceberg MCP Server**. The MCP endpoint is the application's URL plus `/mcp`.
+4. Check it: `scripts/curl_mcp.sh https://<application-url> list` (see below).
+
+Before you start, on the Impala side: the machine user must be allowed to impersonate
+`MCP_TEST_USER` (`authorized_proxy_user_config`), and that user needs Ranger access to the tables
+(see `docs/build-plan.md`, Track A). To try it with demo data, run the **Load MovieLens sample data**
+job, then set `IMPALA_DATABASE` to `mcp_demo` and restart the application.
+
+Things to know:
+- **Unauthenticated applications can be blocked** by a workspace admin ("unauthenticated access to
+  applications prevented by site-wide configuration"). An admin has to allow it.
+- Anyone with the URL can run read-only queries as `MCP_TEST_USER`. Stop the application when idle.
+- The application subdomain `iceberg-mcp` must be unused in the workspace, and the workspace must
+  be able to reach PyPI. The runtime is set to PBJ Workbench, Python 3.12, Standard (edit `runtimes:` if needed).
+- The template is checked by tests (`tests/test_project_metadata.py`), but the first import into a
+  fresh workspace is the real test.
+
+## Check the server with curl
+
+```
+scripts/curl_mcp.sh https://<application-url> health                       # is it up? (no token needed)
+scripts/curl_mcp.sh https://<application-url> list                         # which tools does it offer?
+scripts/curl_mcp.sh https://<application-url> call get_schema
+scripts/curl_mcp.sh https://<application-url> call execute_query '{"query":"SELECT effective_user()"}'
+```
+
+A server that checks tokens needs one: `TOKEN=<token> scripts/curl_mcp.sh ...` (or `TOKEN_FILE=<path>`).
+No token gives `HTTP 401`, which is the correct answer from such a server. The script needs only
+`curl`. An MCP server expects a short conversation first (initialize, confirm, then your request),
+which the script does for you; the three steps are described at the top of the script.
+
 ## Configuration
 
 | Variable | Purpose |
