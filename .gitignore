@@ -14,18 +14,25 @@ wheels/
 .env.*
 impala_details.txt
 impala_*.txt
-azure-creds.txt
 azure-creds*.txt
-archive-dump-later/
-Screenshot*.png
-screenshot*.png
-*.png
-!chat_w_ur_data_Arch.png
+*credentials*.json
 *.pem
 *.key
-*credentials*.json
 .entra_token*
 *.token
+
+# Images and screenshots: kept out of the repo
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.heic
+
+# Personal scratch and archive folders
+archive*/
+scratch/
+Untitled*.ipynb
 
 # Local tooling state (Claude Code sessions/credentials, caches, shell history)
 .claude/
@@ -40,4 +47,3 @@ screenshot*.png
 
 # Jupyter
 .ipynb_checkpoints/
-scratch/

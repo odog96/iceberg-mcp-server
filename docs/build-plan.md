@@ -23,7 +23,7 @@ Original ~10 Azure users map 1:1 to permitted Cloudera users.
 
 ## 2. Architecture
 
-See `chat_w_ur_data_Arch.png` (repo root).
+Architecture diagrams are kept out of the repo (git ignores images); the flow is described below.
 
 ```
 Azure client (Chat App + LLM)
