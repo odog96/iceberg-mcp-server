@@ -49,8 +49,8 @@ mapping, optional allowlist).
 
 - A **Cloudera AI (CML) workspace** you can create a project in, with outbound access to PyPI.
 - **CDP admin rights** to create a machine (service) user and sync it to the environment.
-- Each **end user** you intend to impersonate must be (or become) a synced workload user in that
-  environment — not a Cloudera AI user (see §4e).
+- Each **end user** you intend to impersonate must be a synced workload user in that environment
+  with **MLUser + DWUser + EnvironmentUser** roles and Ranger access (see §4e).
 - An **Impala Virtual Warehouse** in Cloudera Data Warehouse (or the ability to create one).
 - For production (per-user tokens): an **Entra ID app registration** representing this server — you
   need its **Application ID URI** (the token *audience*) and the **tenant ID**. (Registering it is
@@ -66,10 +66,10 @@ mapping, optional allowlist).
 claim to a Cloudera username:
 
 - **Default:** the local part of the first present claim among `preferred_username`, `upn`, `email`
-  — e.g. `jgaragorry@cloudera.com` → `jgaragorry`. If your email handle already equals the Cloudera
+  — e.g. `jdoe@example.com` → `jdoe`. If your email handle already equals the Cloudera
   username, **no mapping configuration is needed**.
 - **`USER_MAP`** (optional): explicit `identity=cloudera_user` pairs for when the handle differs,
-  e.g. `USER_MAP=oliver.zarate@corp.com=ozarate`. When set it is **exclusive** — identities not
+  e.g. `USER_MAP=jane.doe@example.com=jdoe`. When set it is **exclusive** — identities not
   listed are rejected.
 - **`ENTRA_USER_CLAIMS`** (optional): override which claims are tried, in order.
 
@@ -84,7 +84,8 @@ user is allowed to impersonate — the second gate behind the server's own check
 
 ### 4a. Machine (service) user
 1. Create the machine user if it does not exist (needs CDP admin).
-2. In the target **Environment**, grant it **EnvironmentUser** and **DWUser**.
+2. In the target **Environment**, grant it **MLUser** (the Cloudera AI application runs under this
+   account), **EnvironmentUser**, and **DWUser**.
 3. **Environment → Actions → Sync Users**; wait for completion so FreeIPA has the account.
 4. Set the machine user's **workload password** (per-user, in the CDP profile). This is the password
    the server logs in with.
@@ -106,7 +107,7 @@ user is allowed to impersonate — the second gate behind the server's own check
 
    Example:
    ```
-   srv_env-rmcm57=*;srv_srv_mcp_proxy=ozarate,jgaragorry,fcobo
+   srv_env-xxxxxx=*;svc_mcp_proxy=user1,user2,user3
    ```
 
    Two mistakes that cause `User '<machine-user>' is not authorized to delegate to '<user>'`:
@@ -128,24 +129,16 @@ Without this, `doAs` connects fine but `SHOW TABLES` returns nothing and `SELECT
 
 ### 4e. End users (the doAs targets): environment access
 The users you impersonate must be **real, recognized workload identities in the same CDP
-environment**, or Impala cannot resolve them for `doAs`. In the **CDP Management Console**:
-1. Each end user exists as a CDP user (created there, or synced from your identity provider).
-2. Each is granted access to the **Environment** (e.g. the **EnvironmentUser** resource role) and is
-   included when you run **Environment → Actions → Sync Users**, so the workload layer (FreeIPA)
-   knows the account.
-3. Each has the **Ranger** data grants from §4d.
+environment**, or Impala cannot resolve them for `doAs`. In the **CDP Management Console**, each
+end user needs:
+1. To exist as a CDP user (created there, or synced from your identity provider).
+2. These resource roles on the **Environment**: **MLUser**, **DWUser**, and **EnvironmentUser** —
+   then run **Environment → Actions → Sync Users** so the workload layer (FreeIPA) knows the account.
+3. The **Ranger** data grants from §4d (SELECT on the database/tables).
+4. To be listed as a target in the machine user's **`authorized_proxy_user_config`** (§4c).
 
-**What the end users do _not_ need:**
-- **Cloudera AI (CML) access.** They never sign in to CML. Their identity arrives only as a token
-  claim that the server maps to a username and passes to Impala as `doAs`. Only the person who
-  **deploys and runs the MCP application** needs Cloudera AI access.
-- **Their own Impala/CDW login.** They are impersonated by the machine user (§4a), which is the
-  account that actually authenticates; the end users do not open their own session.
-
-> Whether your environment *also* requires the end users to hold a Data Warehouse access role (beyond
-> EnvironmentUser) can vary by CDP version. Verify empirically with `scripts/test_doas.py` (§7,
-> Layer 1): `--allowed` users that are set up correctly connect; anything missing fails there, before
-> the MCP server is involved.
+> Verify the setup empirically with `scripts/test_doas.py` (§7, Layer 1): `--allowed` users that are
+> configured correctly connect; anything missing fails there, before the MCP server is involved.
 
 ---
 
@@ -219,7 +212,7 @@ Test from the lowest layer up, so a failure points at the right place.
 **Layer 1 — Impala `doAs` (no MCP server involved).** With connection details in the environment or
 `impala_details.txt`:
 ```
-python scripts/test_doas.py --allowed ozarate,jgaragorry,fcobo --denied someone_not_allowed --explore
+python scripts/test_doas.py --allowed user1,user2,user3 --denied someone_not_allowed --explore
 ```
 Confirms: a plain connection works; each allowed user's `SELECT effective_user()` returns that user;
 a denied user is rejected; and (with `--explore`) what each user can actually read.
@@ -263,7 +256,7 @@ confirm the full chain through `doAs` to the data.
 |---|---|
 | `HTTP 503` from the coordinator | Virtual Warehouse is stopped or restarting. Wait for Running. |
 | `User '<machine-user>' is not authorized to delegate to '<user>'` | `authorized_proxy_user_config` missing, misspelled machine user, user not listed, or the env system-account entry was overwritten (§4c). Restart after fixing. |
-| `doAs` fails for a user that *is* listed in the proxy config | The impersonated user isn't a recognized workload identity in the environment — create/sync it in the Management Console (§4e). Confirm with `test_doas.py`. |
+| `doAs` fails for a user that *is* listed in the proxy config | The impersonated user isn't a fully set-up workload identity — grant MLUser + DWUser + EnvironmentUser and re-run Sync Users in the Management Console (§4e). Confirm with `test_doas.py`. |
 | `SHOW TABLES` empty but `SELECT` works | Ranger: the user lacks the show/SELECT grant on that database (§4d). (Right after creation, allow a moment for catalog propagation.) |
 | `HTTP 401` from the MCP server | Missing/expired/invalid token, or token audience/issuer doesn't match `ENTRA_AUDIENCE`/`ENTRA_ISSUER` (watch v1 `sts.windows.net` vs v2 issuer). |
 | Mapped to the wrong / no Cloudera user | Email handle ≠ Cloudera username → set `USER_MAP`; or the expected claim isn't present → set `ENTRA_USER_CLAIMS`. Use `whoami` to see what the token carries. |
