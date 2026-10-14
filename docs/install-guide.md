@@ -152,12 +152,57 @@ user is allowed to impersonate — the second gate behind the server's own check
    pick up startup flags.)
 
 ### 4d. Ranger grants
-Each impersonated user needs, in the **Hadoop SQL** (Impala) Ranger service, on the database and
-tables you will query:
-- **SELECT** on the database → tables → columns, and
-- the database-level privilege so the database/tables appear in `SHOW DATABASES` / `SHOW TABLES`.
+Each impersonated user needs **select** on the database and tables you will query, in Ranger's
+**Hadoop SQL** service (that is the service Impala checks). Without it, `doAs` connects fine but
+`SHOW TABLES` returns nothing and `SELECT` is denied.
 
-Without this, `doAs` connects fine but `SHOW TABLES` returns nothing and `SELECT` is denied.
+**Open Ranger.** Management Console → **Environments** → your environment → **Data Lake** tab →
+**Ranger** (under Services).
+
+![Environments list: pick the environment](images/ranger-1-environments-list.png)
+
+![Data Lake tab: Ranger link under Services](images/ranger-2-datalake-ranger-link.png)
+
+**Open the Hadoop SQL policies.** In Service Manager, click **Hadoop SQL** under HADOOP SQL, then
+**Add New Policy** (top right).
+
+![Ranger Service Manager: Hadoop SQL](images/ranger-3-hadoop-sql-service.png)
+
+**Fill in the policy** (one policy per database is enough):
+
+| Field | Value |
+|---|---|
+| Policy Name | e.g. `mcp_demo` |
+| Policy Label | Leave empty (optional tag for searching policies; no effect on access) |
+| Enabled / Normal / Audit Logging | Leave as is. **Audit Logging must stay on**: the per-user audit trail is the point of this setup |
+| Policy Conditions (top right) | Leave empty |
+| Hive Database → *Add policy Resources* | `mcp_demo` (type it and press **Enter** so it becomes a tag) |
+| Hive Table | `*` |
+| Hive Column | `*` |
+| Include toggles | Leave on **Include**; don't use **Add Resource** |
+
+Under **Allow Conditions**, first row:
+
+| Column | Value |
+|---|---|
+| Select Roles / Select Groups | Empty, or a group (see below) |
+| Select Users | The users the MCP server will impersonate |
+| Add Conditions | Leave empty (extra rules such as IP ranges; easy to block access by mistake) |
+| Permissions | Click **+**, tick **select** only, click ✓ to apply |
+| Delegate Admin | Leave unticked (it would let them edit this policy) |
+
+Leave **Exclude from Allow Conditions** and everything below it empty, then click **Add** at the
+bottom.
+
+Notes:
+- **select is enough.** It allows reading and makes the tables show up in `SHOW TABLES`. Don't grant
+  **all**: in test mode every caller runs as the same user, so extra rights apply to every caller.
+- **The user who created the database** (e.g. the one that ran §6) usually has access already and
+  does not need to be in the policy.
+- **Groups.** If impersonation is scoped to a group (§4c), grant the same group here; adding a person
+  is then one group-membership change.
+- **Allow a short delay.** Ranger pushes policies to Impala periodically (typically within ~30 s).
+  Then verify with `scripts/test_doas.py --allowed <users> --explore` (§7, Layer 1).
 
 ### 4e. End users (the doAs targets): environment access
 The users you impersonate must be **real, recognized workload identities in the same CDP
@@ -249,6 +294,19 @@ python scripts/test_doas.py --allowed user1,user2,user3 --denied someone_not_all
 ```
 Confirms: a plain connection works; each allowed user's `SELECT effective_user()` returns that user;
 a denied user is rejected; and (with `--explore`) what each user can actually read.
+
+**Check the audit trail.** Impala's query log is itself queryable. Rows where `db_user` is the end user
+and `db_user_connection` is the machine user are the impersonated queries:
+```sql
+SELECT db_user, db_user_connection, start_time_utc, sql
+FROM sys.impala_query_log
+WHERE db_user IN ('user1', 'user2') AND db_user_connection = '<machine-user>'
+ORDER BY start_time_utc DESC LIMIT 20;
+```
+- **Filter on `db_user_connection`.** Without it, the users' own direct queries (where
+  `db_user_connection` is the user) are mixed in with the impersonated ones.
+- **The log is written with a delay.** Queries can take a few minutes to appear; an empty result
+  right after a test is not yet a failure.
 
 **Layer 2 — MCP server reachability (no token).**
 ```
