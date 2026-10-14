@@ -1,14 +1,15 @@
-name: Iceberg MCP Server for Impala (test mode)
+name: Iceberg MCP Server for Impala
 description: >-
-  MCP server that lets an AI agent query Apache Impala tables through a trusted machine user
-  that impersonates an end user (doAs). This template deploys the UNAUTHENTICATED TEST version:
-  every caller runs as the single Cloudera user set in MCP_TEST_USER, and no token is checked.
-  Use it to get a working, read-only MCP endpoint quickly. For per-user identity (validating
-  Entra ID tokens), see docs/entra-app-registration-checklist.md and README.md.
+  MCP server that lets an AI agent query Apache Impala tables, with every query running as the
+  end user (a trusted machine user impersonates them with doAs, so Ranger and the audit log see
+  the real user). Choose MCP_MODE: "cai" serves apps hosted in this workspace and also deploys a
+  chat app (Cloudera AI login identifies each user); "entra" serves an external app that sends
+  Entra ID tokens; "test" runs every call as one fixed user with no identity check, for trying it
+  out only. See docs/install-guide.md.
 author: Oliver Zarate
 specification_version: 1.0
-prototype_version: 1.0
-date: "2026-09-24"
+prototype_version: 2.0
+date: "2026-10-14"
 
 runtimes:
   - editor: PBJ Workbench
@@ -16,9 +17,13 @@ runtimes:
     edition: Standard
 
 environment_variables:
+  MCP_MODE:
+    default: "cai"
+    description: "cai (apps in this workspace, plus the chat app), entra (an external app sending Entra ID tokens) or test (one fixed user, no identity check)."
+    required: true
   IMPALA_HOST:
     default: ""
-    description: "Impala coordinator host, without https:// (from the Virtual Warehouse in Cloudera Data Warehouse)."
+    description: "Impala coordinator host from the Virtual Warehouse in Cloudera Data Warehouse (a pasted https:// and trailing / are removed)."
     required: true
   IMPALA_PORT:
     default: "443"
@@ -26,7 +31,7 @@ environment_variables:
     required: false
   IMPALA_USER:
     default: ""
-    description: "Machine user that logs in to Impala. It must be allowed to impersonate MCP_TEST_USER (authorized_proxy_user_config)."
+    description: "WORKLOAD username of the machine user that logs in to Impala and impersonates end users. For a machine user this usually has an extra srv_ prefix (e.g. srv_srv_mcp_proxy); check it on the user's page in the Management Console."
     required: true
   IMPALA_PASSWORD_B64:
     default: ""
@@ -36,10 +41,38 @@ environment_variables:
     default: "default"
     description: "Database the server queries. Use mcp_demo after running the optional sample-data job."
     required: false
+  APP_SUBDOMAIN:
+    default: "iceberg-mcp"
+    description: "Subdomain of the MCP server application (must be free in this workspace). The chat app gets <subdomain>-chat."
+    required: false
+  CAI_TRUSTED_CALLERS:
+    default: ""
+    description: "cai mode: CAI users allowed to act for other users (the chat app calls with its creator's API key). Leave empty to use the user who deploys this project."
+    required: false
+  CAI_INFERENCE_BASE_URL:
+    default: ""
+    description: "cai mode, chat app model: OpenAI-compatible URL of a Cloudera AI Inference endpoint (Model Endpoints page, ends in /openai/v1). Or set BEDROCK_MODEL_ID instead. With neither, the chat app is not created."
+    required: false
+  BEDROCK_MODEL_ID:
+    default: ""
+    description: "cai mode, chat app model: AWS Bedrock model or inference-profile id. Also set AWS_REGION, and AWS_BEARER_TOKEN_BEDROCK or AWS access keys, in the project settings."
+    required: false
+  ENTRA_TENANT_ID:
+    default: ""
+    description: "entra mode only: Entra ID tenant id. Leave empty for cai and test mode."
+    required: false
+  ENTRA_AUDIENCE:
+    default: ""
+    description: "entra mode only: Application ID URI of the server's Entra app registration (e.g. api://...). Leave empty for cai and test mode."
+    required: false
+  ENTRA_ISSUER:
+    default: ""
+    description: "entra mode, v1 tokens only: https://sts.windows.net/<tenant-id>/ (leave empty for v2 tokens)."
+    required: false
   MCP_TEST_USER:
     default: ""
-    description: "Cloudera username every request runs as (the server does NOT check tokens in this template). Must be allowed by the machine user's proxy config and have Ranger access to your tables."
-    required: true
+    description: "test mode only: Cloudera username every call runs as, with no identity check. Anyone with the URL can query as this user."
+    required: false
 
 tasks:
   - type: run_session
@@ -56,19 +89,19 @@ tasks:
     kernel: python3
     cpu: 1
     memory: 2
-    short_summary: Optional. Creates a small demo database (mcp_demo, about 124k rows) as MCP_TEST_USER.
+    short_summary: Optional. Creates a small demo database (mcp_demo, about 124k rows).
     long_summary: >-
       Not run automatically because it writes to your warehouse. Run it from the Jobs page if you
-      want sample data (the user needs permission to create a database). Then set IMPALA_DATABASE
-      to mcp_demo in the project settings and restart the application. Data: MovieLens latest-small
-      from GroupLens Research, licensed for non-commercial research and demo use only.
+      want sample data (the user it runs as needs permission to create a database). Then set
+      IMPALA_DATABASE to mcp_demo in the MCP application's settings and restart it. Data: MovieLens
+      latest-small from GroupLens Research, licensed for non-commercial research and demo use only.
 
-  - type: start_application
-    name: Iceberg MCP Server (test mode, no token check)
-    description: MCP endpoint at /mcp. Anyone with the URL can run read-only queries as MCP_TEST_USER, so stop it when not in use.
-    subdomain: iceberg-mcp
-    script: start_mcp.py
+  # Creates the applications for MCP_MODE through the API, because the CAI login setting depends on
+  # the mode (ON for cai, OFF for entra and test) and a start_application task can only fix one.
+  # Safe to re-run from a session: applications that already exist are left alone.
+  - type: run_session
+    name: Create applications for MCP_MODE
+    script: scripts/create_mcp_app.py
     kernel: python3
     cpu: 1
     memory: 2
-    bypass_authentication: true

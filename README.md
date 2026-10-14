@@ -76,40 +76,54 @@ sees results that the person's own permissions allowed.
 See `docs/install-guide.md` for the full setup (Impala, Ranger, impersonation, deployment) and
 `docs/build-plan.md` for the design history.
 
-## Deploy on Cloudera AI (quick start, test mode)
+## Deploy on Cloudera AI
 
-`.project-metadata.yaml` turns this repo into a Cloudera AI project template. It deploys the
-**unauthenticated test version**: every caller runs as one fixed Cloudera user and no token is
-checked. (For per-user identity with Entra ID tokens, see `docs/entra-app-registration-checklist.md`.)
+`.project-metadata.yaml` turns this repo into a Cloudera AI project template. You choose the mode
+with `MCP_MODE`:
+
+| `MCP_MODE` | What gets deployed | CAI login |
+|---|---|---|
+| `cai` (default) | MCP server for apps in this workspace, **plus the chat app** (if a model is configured) | On, for both |
+| `entra` | MCP server for an external app that sends Entra ID tokens | Off; the server checks every token |
+| `test` | MCP server where every call runs as `MCP_TEST_USER`, with no identity check | Off; anyone with the URL can query |
 
 1. In Cloudera AI: **New Project > Git**, paste this repo's URL, then **Configure Project**.
 2. Fill in the environment variables it asks for:
 
    | Variable | What to enter |
    |---|---|
-   | `IMPALA_HOST` | Impala coordinator host, no `https://` |
-   | `IMPALA_USER` | The machine user that logs in to Impala |
-   | `IMPALA_PASSWORD_B64` | Its password, base64-encoded: `printf %s 'PASSWORD' | base64 -w0` |
-   | `MCP_TEST_USER` | The Cloudera user every request runs as |
+   | `MCP_MODE` | `cai`, `entra` or `test` |
+   | `IMPALA_HOST` | Impala coordinator host |
+   | `IMPALA_USER` | The machine user's **workload** username (machine users get an extra `srv_` prefix) |
+   | `IMPALA_PASSWORD_B64` | Its password, base64-encoded: `printf %s 'PASSWORD' \| base64 -w0` |
    | `IMPALA_PORT`, `IMPALA_DATABASE` | Defaults are `443` and `default` |
+   | cai: `CAI_INFERENCE_BASE_URL` or `BEDROCK_MODEL_ID` | The chat app's model; `CAI_TRUSTED_CALLERS` defaults to you |
+   | entra: `ENTRA_TENANT_ID`, `ENTRA_AUDIENCE` | From the server's Entra app registration |
+   | test: `MCP_TEST_USER` | The Cloudera user every request runs as |
 
 3. Launch. It installs dependencies, creates an optional sample-data job (not run automatically),
-   and starts the application **Iceberg MCP Server**. The MCP endpoint is the application's URL plus `/mcp`.
+   and runs `scripts/create_mcp_app.py`, which creates the applications for the mode with the right
+   CAI login setting. The MCP endpoint is the MCP application's URL plus `/mcp`.
 4. Check it: `scripts/curl_mcp.sh https://<application-url> list` (see below).
 
-Before you start, on the Impala side: the machine user must be allowed to impersonate
-`MCP_TEST_USER` (`authorized_proxy_user_config`), and that user needs Ranger access to the tables
-(see `docs/build-plan.md`, Track A). To try it with demo data, run the **Load MovieLens sample data**
-job, then set `IMPALA_DATABASE` to `mcp_demo` and restart the application.
+If the template's variables don't reach the project (a known issue in some CAI versions), set them
+in **Project Settings > Advanced > Environment Variables** and run `python scripts/create_mcp_app.py`
+from a session. See `docs/install-guide.md` §5d.
+
+Before you start, on the Impala side: the machine user must be allowed to impersonate the end users
+(`authorized_proxy_user_config`), and they need Ranger access to the tables (install guide §4). To
+try it with demo data, run the **Load MovieLens sample data** job, then set `IMPALA_DATABASE` to
+`mcp_demo` in the MCP application's settings and restart it.
 
 Things to know:
 - **Unauthenticated applications can be blocked** by a workspace admin ("unauthenticated access to
-  applications prevented by site-wide configuration"). An admin has to allow it.
-- Anyone with the URL can run read-only queries as `MCP_TEST_USER`. Stop the application when idle.
-- The application subdomain `iceberg-mcp` must be unused in the workspace, and the workspace must
-  be able to reach PyPI. The runtime is set to PBJ Workbench, Python 3.12, Standard (edit `runtimes:` if needed).
-- The template is checked by tests (`tests/test_project_metadata.py`), but the first import into a
-  fresh workspace is the real test.
+  applications prevented by site-wide configuration"). Entra and test mode need them allowed.
+- In test mode anyone with the URL can run read-only queries as `MCP_TEST_USER`. Stop it when idle.
+- The subdomains `iceberg-mcp` and `iceberg-mcp-chat` must be unused in the workspace (change them
+  with `APP_SUBDOMAIN`), and the workspace must be able to reach PyPI. The runtime is PBJ Workbench,
+  Python 3.12, Standard.
+- The template is checked by tests (`tests/test_project_metadata.py`, `tests/test_create_apps.py`),
+  but the first import into a fresh workspace is the real test.
 
 ## Check the server with curl
 

@@ -4,6 +4,7 @@ The template is only exercised when someone imports the project into another wor
 too late to find a typo. These checks cover what can be checked offline.
 """
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -44,18 +45,20 @@ def test_task_has_required_fields_and_real_script(task):
         assert (ROOT / task["script"]).is_file(), f"{task['script']} does not exist"
 
 
-def test_application_is_last_because_tasks_run_in_order():
-    assert TASKS[-1]["type"] == "start_application"
-    assert TASKS[-1]["script"] == "start_mcp.py"
+def test_applications_are_created_by_the_mode_aware_script():
+    # The CAI login setting depends on MCP_MODE (ON for cai, OFF for entra/test), which a
+    # start_application task cannot express, so the last task creates the applications instead.
+    assert not [t for t in TASKS if t["type"] == "start_application"]
+    assert TASKS[-1]["type"] == "run_session"
+    assert TASKS[-1]["script"] == "scripts/create_mcp_app.py"
 
 
 def test_every_environment_variable_is_one_the_code_reads():
-    source = "".join(
-        (ROOT / "src" / "iceberg_mcp_server" / f).read_text()
-        for f in ("server.py", "identity.py", "tools/impala_tools.py")
-    )
+    files = [ROOT / "src" / "iceberg_mcp_server" / f for f in ("server.py", "identity.py", "tools/impala_tools.py")]
+    files += [ROOT / "scripts" / "create_mcp_app.py", ROOT / "chat_app" / "llm.py"]
+    source = "".join(f.read_text() for f in files)
     for name in ENV:
-        assert name in source, f"{name} is defined in the template but never read by the server"
+        assert name in source, f"{name} is defined in the template but never read"
 
 
 def test_password_has_no_default_and_is_required():
@@ -63,12 +66,20 @@ def test_password_has_no_default_and_is_required():
     assert ENV["IMPALA_PASSWORD_B64"]["required"] is True
 
 
-def test_test_mode_template_needs_a_fixed_user_and_never_sets_entra():
-    # Setting any ENTRA_* variable would switch the server to token checking, which contradicts
-    # this template's purpose (and its unauthenticated application).
-    assert ENV["MCP_TEST_USER"]["required"] is True and ENV["MCP_TEST_USER"]["default"] == ""
-    assert not [k for k in ENV if k.startswith("ENTRA_")]
-    assert TASKS[-1]["bypass_authentication"] is True
+def test_mode_defaults_to_cai_and_identity_settings_start_empty():
+    # cai is the mode whose applications keep CAI login ON. Every identity setting starts empty,
+    # so the deployer fills only the chosen mode's (create_mcp_app.py refuses another mode's).
+    assert ENV["MCP_MODE"]["default"] == "cai"
+    for name in ("CAI_TRUSTED_CALLERS", "ENTRA_TENANT_ID", "ENTRA_AUDIENCE", "ENTRA_ISSUER", "MCP_TEST_USER"):
+        assert ENV[name]["default"] == "" and ENV[name]["required"] is False, name
+
+
+def test_mode_values_match_the_script():
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from create_mcp_app import MODES
+
+    for mode in MODES:
+        assert mode in ENV["MCP_MODE"]["description"]
 
 
 def test_optional_data_job_is_never_run_automatically():

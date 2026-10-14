@@ -5,7 +5,7 @@ It connects as the machine user impersonating --user (so that user needs
 CREATE on the database in Ranger) and reads connection details from
 impala_details.txt just like test_doas.py.
 
-    python scripts/setup_sample_data.py --user ozarate      # --user defaults to $MCP_TEST_USER
+    python scripts/setup_sample_data.py --user ozarate      # default: $MCP_TEST_USER, else you
     python scripts/setup_sample_data.py --user ozarate --recreate   # drop and reload
 
 Creates database `mcp_demo` (override with --database) with four tables:
@@ -92,14 +92,15 @@ def execute(conn, sql: str) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--user", default=os.getenv("MCP_TEST_USER"),
-                    help="Cloudera user to impersonate; needs CREATE rights (default: $MCP_TEST_USER)")
+    # Default: the test user, else whoever runs this (CAI sets HADOOP_USER_NAME in sessions and jobs)
+    ap.add_argument("--user", default=os.getenv("MCP_TEST_USER") or os.getenv("HADOOP_USER_NAME"),
+                    help="Cloudera user to impersonate; needs CREATE rights (default: $MCP_TEST_USER, else you)")
     ap.add_argument("--database", default="mcp_demo")
     ap.add_argument("--format", default="ICEBERG", choices=["ICEBERG", "PARQUET"])
     ap.add_argument("--recreate", action="store_true", help="drop and reload the tables if they exist")
     args = ap.parse_args()
     if not args.user:
-        ap.error("--user is required (or set MCP_TEST_USER)")
+        ap.error("--user is required")
 
     load_details_file(Path(__file__).resolve().parent.parent / "impala_details.txt")
     db = args.database

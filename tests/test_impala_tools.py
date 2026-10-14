@@ -74,6 +74,16 @@ def test_connection_uses_doas_path(monkeypatch):
     assert captured["auth_mechanism"] == "LDAP"
 
 
+@pytest.mark.parametrize("host", ["coord.example.com", "https://coord.example.com/", " coord.example.com/ "])
+def test_connection_host_pasted_as_url(monkeypatch, host):
+    captured = {}
+    monkeypatch.setattr(t, "connect", lambda **kw: captured.update(kw))
+    monkeypatch.setenv("IMPALA_HOST", host)
+    monkeypatch.setenv("IMPALA_PASSWORD_B64", "cGFzcyQ=")
+    t.get_db_connection("ozarate")
+    assert captured["host"] == "coord.example.com"
+
+
 def test_connection_requires_user():
     with pytest.raises(ValueError):
         t.get_db_connection(None)

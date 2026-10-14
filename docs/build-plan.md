@@ -133,6 +133,15 @@ treat the first import as the real test.
 optional bearer token). Verified live against the fixed-user app, against the token-checking app
 (clear 401 message) and by automated tests against the local test server, including the token path.
 
+
+2026-10-14. The template now covers all three modes through `MCP_MODE` (`cai` default, `entra`,
+`test`). Its last task runs `scripts/create_mcp_app.py` in a session instead of `start_application`,
+because CAI login must be ON for a CAI-mode server and OFF for the others, and a template task can
+only fix one value. In CAI mode it also creates the chat app when a model is configured. The script
+is unit-tested per mode (`tests/test_create_apps.py`) and was checked live against this workspace's
+API (it leaves existing applications alone), but **a fresh import of the template is still
+unproven**.
+
 ## whoami: proving what the agent actually sends
 
 2026-09-23. A colleague questioned whether Azure sends a token at all. Evidence so far was

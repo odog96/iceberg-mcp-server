@@ -43,7 +43,9 @@ def _get_password():
 # for effective_user: a missing user must never fall back to the machine user.
 def get_db_connection(effective_user: str):
     effective_user = validate_username(effective_user)
-    host = os.getenv("IMPALA_HOST", "coordinator-default-impala.example.com")
+    # Tolerate a host pasted from the browser: https://<host>/ -> <host>
+    host = os.getenv("IMPALA_HOST", "coordinator-default-impala.example.com").strip()
+    host = host.removeprefix("https://").removeprefix("http://").rstrip("/")
     port = int(os.getenv("IMPALA_PORT", "443"))
     user = os.getenv("IMPALA_USER", "username")
     password = _get_password()
