@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from iceberg_mcp_server.tools import impala_tools as t
@@ -78,8 +80,6 @@ def test_connection_requires_user():
 
 
 # --- get_schema -----------------------------------------------------------------
-
-import json
 
 
 class FakeCursor:
