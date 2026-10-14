@@ -35,6 +35,7 @@ azure-creds*.txt
 archive*/
 scratch/
 Untitled*.ipynb
+qwen-connect-test.ipynb
 
 # Local tooling state (Claude Code sessions/credentials, caches, shell history)
 .claude/
