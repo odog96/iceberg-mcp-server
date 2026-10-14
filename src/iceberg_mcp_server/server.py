@@ -54,7 +54,8 @@ def execute_query(query: str) -> str:
 @mcp.tool()
 def get_schema() -> str:
     """
-    Retrieve the list of table names in the current Impala database.
+    List the tables in the current Impala database with their columns (name and type).
+    Call this first, and use the exact column names it returns.
     """
     return impala_tools.get_schema(_effective_user())
 

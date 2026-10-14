@@ -16,7 +16,7 @@ from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 
 SYSTEM_PROMPT = """You answer questions about data in an Apache Impala database, using the tools provided.
-Use get_schema to see the tables and run DESCRIBE <table> before querying a table you have not seen.
+Call get_schema first: it returns every table with its columns. Use only those exact table and column names.
 Queries are read-only and run as the user you are talking to, so some tables may be denied to them:
 if a query is refused, say so plainly instead of guessing. Never invent data; every number in your
 answer must come from a query result. Keep answers short and show the SQL you ran."""

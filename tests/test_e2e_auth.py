@@ -139,7 +139,7 @@ async def call(url, tok, tool="get_schema", args=None):
 async def test_valid_token_runs_as_mapped_user(server_url, keys, connections):
     connections.clear()
     res = await call(server_url, token(keys))
-    assert json.loads(res.content[0].text) == ["t1", "t2"]
+    assert list(json.loads(res.content[0].text)["tables"]) == ["t1", "t2"]
     assert connections == ["ozarate"]
 
 

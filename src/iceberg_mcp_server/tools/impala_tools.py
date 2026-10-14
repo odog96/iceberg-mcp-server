@@ -71,7 +71,20 @@ READONLY_PREFIXES = {"select", "show", "describe", "with"}
 # A WITH clause can front an INSERT in Impala, so write keywords are rejected
 # anywhere in a WITH/SELECT statement. SHOW and DESCRIBE cannot front a write
 # (and SHOW CREATE TABLE legitimately contains "create"), so they skip this check.
-WRITE_KEYWORDS = {"insert", "upsert", "update", "delete", "create", "drop", "alter", "truncate", "grant", "revoke", "load", "merge"}
+WRITE_KEYWORDS = {
+    "insert",
+    "upsert",
+    "update",
+    "delete",
+    "create",
+    "drop",
+    "alter",
+    "truncate",
+    "grant",
+    "revoke",
+    "load",
+    "merge",
+}
 
 _TOKEN_RE = re.compile(
     r"""
@@ -137,15 +150,37 @@ def execute_query(query: str, effective_user: str) -> str:
                 pass
 
 
+# Columns are listed for at most this many tables per call; beyond it, only table names (the model
+# can DESCRIBE a table itself). Keeps the answer small and the number of DESCRIBEs bounded.
+SCHEMA_MAX_DESCRIBED_TABLES = 50
+
+
 def get_schema(effective_user: str) -> str:
+    """Tables in the current database with their columns, so a model can write SQL without guessing.
+
+    One connection for the whole call: SHOW TABLES, then DESCRIBE per table (information_schema is not
+    available on every Impala). A table the user may list but not describe is reported, not fatal.
+    """
     conn = None
     try:
         conn = get_db_connection(effective_user)
         cur = conn.cursor()
         cur.execute("SHOW TABLES")
-        tables = cur.fetchall()
-        schema = [table[0] for table in tables]
-        return json.dumps(schema)
+        names = [row[0] for row in cur.fetchall()]
+        tables = {}
+        for name in names[:SCHEMA_MAX_DESCRIBED_TABLES]:
+            try:
+                cur.execute(f"DESCRIBE `{name.replace('`', '')}`")
+                tables[name] = [
+                    f"{r[0]} {r[1]}".strip() if len(r) > 1 else str(r[0]) for r in cur.fetchall() if r and r[0]
+                ]
+            except Exception as e:
+                tables[name] = f"columns not available: {str(e).splitlines()[0][:200]}"
+        result = {"tables": tables}
+        if len(names) > SCHEMA_MAX_DESCRIBED_TABLES:
+            result["more_tables"] = names[SCHEMA_MAX_DESCRIBED_TABLES:]
+            result["note"] = "Columns shown for the first tables only; run DESCRIBE <table> for the others."
+        return json.dumps(result)
     except Exception as e:
         return f"Error: {str(e)}"
     finally:
