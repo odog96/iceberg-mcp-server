@@ -23,8 +23,14 @@ Environment variables:
                            fallback). Use it when token identities are not Cloudera names.
     ALLOWED_USERS          optional comma-separated Cloudera usernames; if set, any
                            other mapped user is rejected
+    CAI_TRUSTED_CALLERS    optional comma-separated CAI usernames; turns on CAI mode, for callers
+                           hosted in Cloudera AI (e.g. the chat app). The Application must run
+                           with CAI authentication ON: CAI's proxy then sets Remote-User to the
+                           authenticated caller (overwriting any client-sent value). A caller
+                           runs as itself, unless it is listed here and sends X-On-Behalf-Of,
+                           in which case it runs as that user. Cannot be combined with ENTRA_*.
     MCP_TEST_USER          fixed Cloudera user for test deployments with no token
-                           validation. Only honoured when ENTRA_* auth is NOT
+                           validation. Only honoured when neither ENTRA_* nor CAI mode is
                            configured; startup logs a loud warning.
 """
 
@@ -37,6 +43,8 @@ from fastmcp.server.auth.providers.jwt import JWTVerifier
 from iceberg_mcp_server.tools.impala_tools import validate_username
 
 DEFAULT_USER_CLAIMS = ("preferred_username", "upn", "email")
+CAI_USER_HEADER = "remote-user"  # set by CAI's proxy when Application authentication is on
+ON_BEHALF_HEADER = "x-on-behalf-of"
 
 
 class IdentityError(Exception):
@@ -49,6 +57,10 @@ def _csv(name: str) -> list[str]:
 
 def auth_configured() -> bool:
     return bool(os.getenv("ENTRA_TENANT_ID") and os.getenv("ENTRA_AUDIENCE"))
+
+
+def cai_mode() -> bool:
+    return bool(_csv("CAI_TRUSTED_CALLERS"))
 
 
 def build_verifier():
@@ -99,20 +111,40 @@ def map_claims_to_user(claims: dict) -> str:
         validate_username(user)
     except ValueError:
         raise IdentityError("Token identity does not map to a valid Cloudera username") from None
+    return _check_allowed(user)
 
+
+def _check_allowed(user: str) -> str:
     allowed = [u.lower() for u in _csv("ALLOWED_USERS")]
     if allowed and user not in allowed:
         raise IdentityError("User is not permitted")
     return user
 
 
-def resolve_effective_user(access_token) -> str:
+def resolve_cai_user(headers: dict) -> str:
+    """CAI mode: the Cloudera user for a request that came through CAI's authenticating proxy."""
+    caller = (headers.get(CAI_USER_HEADER) or "").strip().lower()
+    if not caller:
+        raise IdentityError("No CAI user on the request: is the Application's authentication turned on?")
+    user = (headers.get(ON_BEHALF_HEADER) or "").strip().lower() or caller
+    if user != caller and caller not in [u.lower() for u in _csv("CAI_TRUSTED_CALLERS")]:
+        raise IdentityError("Caller may not act on behalf of other users")
+    try:
+        validate_username(user)
+    except ValueError:
+        raise IdentityError("Not a valid Cloudera username") from None
+    return _check_allowed(user)
+
+
+def resolve_effective_user(access_token, headers: dict | None = None) -> str:
     """Effective Cloudera user for the current request."""
     if access_token is not None:
         return map_claims_to_user(access_token.claims)
-    # No validated token. Only allowed in explicit test mode, never when Entra auth is on.
+    if cai_mode() and not auth_configured():
+        return resolve_cai_user(headers or {})
+    # No validated token. Only allowed in explicit test mode, never when Entra auth or CAI mode is on.
     test_user = os.getenv("MCP_TEST_USER")
-    if test_user and not auth_configured():
+    if test_user and not auth_configured() and not cai_mode():
         try:
             return validate_username(test_user)
         except ValueError:
@@ -128,6 +160,22 @@ def _iso_utc(ts) -> str | None:
     if isinstance(ts, (int, float)):
         return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat(timespec="seconds")
     return None
+
+
+def describe_cai_caller(headers: dict) -> dict:
+    """Non-secret summary of a CAI-mode request."""
+    try:
+        user, note = resolve_cai_user(headers), "mapped"
+    except IdentityError as e:
+        user, note = None, str(e)
+    return {
+        "mode": "cai",
+        "cai_caller": headers.get(CAI_USER_HEADER),
+        "on_behalf_of": headers.get(ON_BEHALF_HEADER),
+        "caller_is_trusted": (headers.get(CAI_USER_HEADER) or "").lower() in [u.lower() for u in _csv("CAI_TRUSTED_CALLERS")],
+        "cloudera_user": user,
+        "mapping_result": note,
+    }
 
 
 def describe_caller(access_token) -> dict:

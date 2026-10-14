@@ -10,7 +10,7 @@
 
 import os
 from fastmcp import FastMCP
-from fastmcp.server.dependencies import get_access_token
+from fastmcp.server.dependencies import get_access_token, get_http_headers
 from dotenv import load_dotenv
 from starlette.responses import PlainTextResponse
 
@@ -36,7 +36,7 @@ async def landing(request):
 def _effective_user() -> str:
     """Cloudera user for this request. Raises (tool call fails) if it cannot be resolved."""
     try:
-        return identity.resolve_effective_user(get_access_token())
+        return identity.resolve_effective_user(get_access_token(), get_http_headers(include_all=True))
     except identity.IdentityError as e:
         raise PermissionError(str(e)) from None
 
@@ -68,20 +68,34 @@ if identity.whoami_enabled():
         (issuer, audience, calling app, granted scope, expiry, identity, mapped Cloudera user).
         The token itself is never shown.
         """
+        if identity.cai_mode() and not identity.auth_configured():
+            return identity.describe_cai_caller(get_http_headers(include_all=True))
         return identity.describe_caller(get_access_token())
 
 
 def main():
     transport = os.getenv("MCP_TRANSPORT", "stdio")
-    if identity.auth_configured():
+    if identity.auth_configured() and identity.cai_mode():
+        raise SystemExit(
+            "Refusing to start: ENTRA_* (external callers, CAI authentication off) and CAI_TRUSTED_CALLERS "
+            "(CAI callers, CAI authentication on) need different Application settings; deploy them separately"
+        )
+    if identity.cai_mode():
+        print(
+            "CAI mode: identity from CAI's Remote-User header. The Application MUST run with authentication ON. "
+            f"Trusted callers: {os.environ['CAI_TRUSTED_CALLERS']}"
+        )
+        if os.getenv("MCP_TEST_USER"):
+            print("WARNING: MCP_TEST_USER is ignored in CAI mode")
+    elif identity.auth_configured():
         if os.getenv("MCP_TEST_USER"):
             print("WARNING: MCP_TEST_USER is ignored because Entra auth is configured")
     elif os.getenv("MCP_TEST_USER"):
         print(f"WARNING: NO TOKEN VALIDATION. Every caller runs as fixed test user {os.environ['MCP_TEST_USER']!r}")
     else:
         raise SystemExit(
-            "Refusing to start: set ENTRA_TENANT_ID and ENTRA_AUDIENCE (production) "
-            "or MCP_TEST_USER (test deployments only)"
+            "Refusing to start: set ENTRA_TENANT_ID and ENTRA_AUDIENCE (external callers), "
+            "CAI_TRUSTED_CALLERS (CAI-hosted callers) or MCP_TEST_USER (test deployments only)"
         )
     if identity.whoami_enabled():
         print("NOTE: whoami diagnostic tool is enabled (shows token details, never the token itself)")

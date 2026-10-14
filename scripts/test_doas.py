@@ -39,7 +39,9 @@ KEY_ALIASES = {
     "impala_port": "IMPALA_PORT",
     "impala_username": "IMPALA_USER",
     "impala_user": "IMPALA_USER",
+    "impala_machine_user_name": "IMPALA_USER",
     "impala_password": "IMPALA_PASSWORD",
+    "impala_machine_user_workload_password": "IMPALA_PASSWORD",
     "impala_password_b64": "IMPALA_PASSWORD_B64",
     "impala_database": "IMPALA_DATABASE",
 }

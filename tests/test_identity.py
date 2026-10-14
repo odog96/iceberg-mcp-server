@@ -5,7 +5,7 @@ from iceberg_mcp_server import identity
 
 @pytest.fixture(autouse=True)
 def clean_env(monkeypatch):
-    for k in ("ENTRA_TENANT_ID", "ENTRA_AUDIENCE", "ENTRA_USER_CLAIMS", "ALLOWED_USERS", "MCP_TEST_USER", "USER_MAP"):
+    for k in ("ENTRA_TENANT_ID", "ENTRA_AUDIENCE", "ENTRA_USER_CLAIMS", "ALLOWED_USERS", "MCP_TEST_USER", "USER_MAP", "CAI_TRUSTED_CALLERS"):
         monkeypatch.delenv(k, raising=False)
 
 
@@ -142,3 +142,65 @@ def test_describe_caller_without_token_is_test_mode_or_unauthenticated(monkeypat
     monkeypatch.setenv("MCP_TEST_USER", "ozarate")
     out = identity.describe_caller(None)
     assert out["token_received"] is False and out["cloudera_user"] == "ozarate"
+
+
+# --- CAI mode -------------------------------------------------------------------
+
+
+@pytest.fixture
+def cai(monkeypatch):
+    monkeypatch.setenv("CAI_TRUSTED_CALLERS", "svc_chat")
+
+
+def test_cai_caller_runs_as_itself(cai):
+    assert identity.resolve_effective_user(None, {"remote-user": "mschuler"}) == "mschuler"
+
+
+def test_cai_trusted_caller_acts_on_behalf(cai):
+    headers = {"remote-user": "svc_chat", "x-on-behalf-of": "PaulDefusco"}
+    assert identity.resolve_effective_user(None, headers) == "pauldefusco"
+
+
+def test_cai_untrusted_caller_cannot_act_on_behalf(cai):
+    with pytest.raises(identity.IdentityError, match="on behalf"):
+        identity.resolve_effective_user(None, {"remote-user": "mallory", "x-on-behalf-of": "ozarate"})
+
+
+def test_cai_on_behalf_of_self_is_fine_for_anyone(cai):
+    assert identity.resolve_effective_user(None, {"remote-user": "mallory", "x-on-behalf-of": "mallory"}) == "mallory"
+
+
+def test_cai_missing_remote_user_rejected(cai):
+    with pytest.raises(identity.IdentityError, match="authentication turned on"):
+        identity.resolve_effective_user(None, {"x-on-behalf-of": "ozarate"})
+
+
+@pytest.mark.parametrize("bad", ["a&doAs=root", "with space", "1abc"])
+def test_cai_on_behalf_user_validated(cai, bad):
+    with pytest.raises(identity.IdentityError):
+        identity.resolve_effective_user(None, {"remote-user": "svc_chat", "x-on-behalf-of": bad})
+
+
+def test_cai_respects_allowlist(cai, monkeypatch):
+    monkeypatch.setenv("ALLOWED_USERS", "ozarate")
+    with pytest.raises(identity.IdentityError, match="not permitted"):
+        identity.resolve_effective_user(None, {"remote-user": "svc_chat", "x-on-behalf-of": "mschuler"})
+
+
+def test_cai_mode_disables_test_user(cai, monkeypatch):
+    monkeypatch.setenv("MCP_TEST_USER", "ozarate")
+    with pytest.raises(identity.IdentityError):
+        identity.resolve_effective_user(None, {})
+
+
+def test_cai_mode_ignored_when_entra_configured(cai, monkeypatch):
+    # main() refuses to start with both; resolution must still never fall back to headers.
+    monkeypatch.setenv("ENTRA_TENANT_ID", "t")
+    monkeypatch.setenv("ENTRA_AUDIENCE", "a")
+    with pytest.raises(identity.IdentityError):
+        identity.resolve_effective_user(None, {"remote-user": "ozarate"})
+
+
+def test_describe_cai_caller(cai):
+    out = identity.describe_cai_caller({"remote-user": "svc_chat", "x-on-behalf-of": "ozarate"})
+    assert out["mode"] == "cai" and out["caller_is_trusted"] is True and out["cloudera_user"] == "ozarate"
