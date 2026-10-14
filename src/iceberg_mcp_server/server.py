@@ -74,6 +74,47 @@ if identity.whoami_enabled():
         return identity.describe_caller(get_access_token())
 
 
+def check_cai_application_auth() -> str | None:
+    """CAI mode needs CAI authentication ON for this Application. Returns an error message if it is
+    certainly off, else None (after printing a warning when it cannot tell).
+
+    Tested: with authentication off, CAI strips a client-sent Remote-User, so a misconfigured server
+    fails safe (every call refused). This check turns that into a clear startup error instead.
+    The Application finds itself as the start_mcp.py Application in this project whose stored
+    environment matches this process's.
+    """
+    try:
+        import json
+
+        import cmlapi
+
+        client = cmlapi.default_client()
+        apps = client.list_applications(os.environ["CDSW_PROJECT_ID"], page_size=100).applications
+    except Exception as e:
+        print(f"WARNING: could not check this Application's authentication setting ({type(e).__name__})")
+        return None
+
+    def env_of(app):
+        env = app.environment or {}
+        return json.loads(env) if isinstance(env, str) else dict(env)
+
+    mine = [
+        a
+        for a in apps
+        if (a.script or "").endswith("start_mcp.py")
+        and env_of(a).get("CAI_TRUSTED_CALLERS")
+        and all(os.environ.get(k) == v for k, v in env_of(a).items())
+    ]
+    if mine and all(a.bypass_authentication for a in mine):
+        return (
+            f"Refusing to start: CAI mode needs CAI authentication ON, but Application {mine[0].name!r} allows "
+            "unauthenticated access. Turn that off in the Application settings, or use ENTRA_* for external callers."
+        )
+    if len(mine) != 1:
+        print(f"WARNING: could not identify this Application ({len(mine)} candidates); authentication not checked")
+    return None
+
+
 def main():
     transport = os.getenv("MCP_TRANSPORT", "stdio")
     if identity.auth_configured() and identity.cai_mode():
@@ -82,6 +123,8 @@ def main():
             "(CAI callers, CAI authentication on) need different Application settings; deploy them separately"
         )
     if identity.cai_mode():
+        if os.getenv("CDSW_APP_PORT") and (error := check_cai_application_auth()):
+            raise SystemExit(error)
         print(
             "CAI mode: identity from CAI's Remote-User header. The Application MUST run with authentication ON. "
             f"Trusted callers: {os.environ['CAI_TRUSTED_CALLERS']}"
@@ -102,6 +145,7 @@ def main():
         print("NOTE: whoami diagnostic tool is enabled (shows token details, never the token itself)")
     print(f"Starting Iceberg MCP Server via transport: {transport}")
     mcp.run(transport=transport)
+
 
 if __name__ == "__main__":
     main()

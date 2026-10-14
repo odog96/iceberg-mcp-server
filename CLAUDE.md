@@ -27,7 +27,7 @@ Live checks against real infrastructure (these need credentials, so don't run th
 
 Request flow: caller identity -> Cloudera username -> Impala connection as machine user with `doAs=<username>`. The identity comes from one of three modes, chosen by env vars:
 - **Entra** (external apps; CAI Application auth OFF): bearer token -> FastMCP `JWTVerifier` -> claims mapped to a username.
-- **CAI** (CAI-hosted apps; Application auth ON): CAI's proxy sets `Remote-User` to the authenticated caller (an API key's owner, or the browser user) and overwrites client-sent values. The caller runs as itself, or as `X-On-Behalf-Of` if the caller is in `CAI_TRUSTED_CALLERS`. Only safe while CAI auth is on for the MCP Application.
+- **CAI** (CAI-hosted apps; Application auth ON): CAI's proxy sets `Remote-User` to the authenticated caller (an API key's owner, or the browser user) and overwrites client-sent values. The caller runs as itself, or as `X-On-Behalf-Of` if the caller is in `CAI_TRUSTED_CALLERS`. Only meaningful while CAI auth is on for the MCP Application. Tested: with auth off, CAI strips a client-sent `Remote-User`, so a misconfigured server fails safe (every call refused); `check_cai_application_auth()` in `server.py` also refuses to start when its own Application allows unauthenticated access.
 - **Test**: every call runs as `MCP_TEST_USER`.
 
 - `src/iceberg_mcp_server/server.py`: FastMCP app. Tools `execute_query`, `get_schema` and an opt-in `whoami` (`MCP_ENABLE_WHOAMI=1`). Each tool resolves the effective user via `_effective_user()` before touching Impala. Also has unauthenticated `/` and `/health` routes for CML's health poll. These routes must stay static and must not touch Impala.
