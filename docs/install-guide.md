@@ -84,17 +84,38 @@ user is allowed to impersonate — the second gate behind the server's own check
 
 ### 4a. Machine (service) user
 1. Create the machine user if it does not exist (needs CDP admin).
-2. In the target **Environment**, grant it **MLUser** (the Cloudera AI application runs under this
-   account), **EnvironmentUser**, and **DWUser**.
-3. **Environment → Actions → Sync Users**; wait for completion so FreeIPA has the account.
+2. In the target **Environment**, open **Actions → Manage Access**, find the machine user and grant
+   it **MLUser** (the Cloudera AI application runs under this account), **EnvironmentUser**, and
+   **DWUser**.
+
+   ![Environment Details: Actions → Manage Access](images/env-manage-access.png)
+
+   ![Update Resource Roles: DWUser, EnvironmentUser and MLUser ticked](images/env-resource-roles.png)
+
+3. **Environment → Actions → Synchronize Users**; wait for completion so FreeIPA has the account.
 4. Set the machine user's **workload password** (per-user, in the CDP profile). This is the password
-   the server logs in with.
+   the server logs in with. **Save it somewhere safe right away:** CDP will not show it again, and
+   the only fix later is to reset it and update `IMPALA_PASSWORD_B64` everywhere it is used.
+
+> **Name check.** The machine user's **workload username** is what Impala sees, and for machine
+> users CDP adds a `srv_` prefix: a machine user shown as `srv_mcp_proxy` logs in as
+> `srv_srv_mcp_proxy`. Use the workload username for `IMPALA_USER` and in §4c.
 
 ### 4b. Impala Virtual Warehouse
-1. Create a Virtual Warehouse in the environment.
-2. **Type must be Impala** (the console often defaults to Hive).
-3. **Enable JWT Authentication = off.** The MCP server validates tokens in code; Impala itself
-   authenticates the machine user by LDAP password, not JWT.
+1. In **Cloudera Data Warehouse → Overview → Virtual Warehouses**, click **New Virtual Warehouse**.
+
+   ![Cloudera Data Warehouse overview: New Virtual Warehouse](images/cdw-new-virtual-warehouse.png)
+
+2. **Type must be Impala** (the console often defaults to Hive). Pick the environment and its
+   database catalog.
+3. **Enable SSO and Enable JWT Authentication = both off.** The MCP server validates tokens in code;
+   Impala itself authenticates the machine user by LDAP password, not JWT.
+
+   The other settings can stay at their defaults (an `xsmall` size is enough for testing). Note that
+   **auto-suspend** is on by default (300 s): a suspended warehouse answers `HTTP 503` until it has
+   woken up (see §9).
+
+   ![Create Virtual Warehouse: Type Impala, SSO and JWT off](images/cdw-create-impala-vw.png)
 4. Note the **coordinator host** (e.g. `coordinator-<name>.<env>.<region>.cloudera.site`). This is
    `IMPALA_HOST` later — without the `https://` prefix.
 
@@ -116,6 +137,17 @@ user is allowed to impersonate — the second gate behind the server's own check
    - **Overwriting the environment system account entry.** The value is `;`-separated. Read the
      existing value and **append** your `machine-user=...` rule — do not replace the `...=*` entry
      that is already there.
+   **Who the machine user may impersonate:**
+   - **Explicit list** (`<machine-user>=user1,user2`): tightest, but every new user needs an edit and
+     a warehouse restart.
+   - **Group** (recommended for production): leave the machine user out of
+     `authorized_proxy_user_config` and add a second key,
+     `authorized_proxy_group_config` = `<machine-user>=<group>`. Adding someone is then a group
+     membership change instead of a config edit (verify with `test_doas.py` after adding someone).
+   - **Wildcard** (`<machine-user>=*`): convenient for testing, but the machine user can then
+     impersonate anyone, including admins, so only the MCP server's own checks and Ranger remain.
+     Not for production.
+
 4. **Save and restart** the warehouse so the coordinator reloads the flag. (A soft refresh may not
    pick up startup flags.)
 
@@ -132,8 +164,9 @@ The users you impersonate must be **real, recognized workload identities in the 
 environment**, or Impala cannot resolve them for `doAs`. In the **CDP Management Console**, each
 end user needs:
 1. To exist as a CDP user (created there, or synced from your identity provider).
-2. These resource roles on the **Environment**: **MLUser**, **DWUser**, and **EnvironmentUser** —
-   then run **Environment → Actions → Sync Users** so the workload layer (FreeIPA) knows the account.
+2. These resource roles on the **Environment** (same **Manage Access** screens as §4a): **MLUser**,
+   **DWUser**, and **EnvironmentUser** —
+   then run **Environment → Actions → Synchronize Users** so the workload layer (FreeIPA) knows the account.
 3. The **Ranger** data grants from §4d (SELECT on the database/tables).
 4. To be listed as a target in the machine user's **`authorized_proxy_user_config`** (§4c).
 
@@ -254,9 +287,9 @@ confirm the full chain through `doAs` to the data.
 
 | Symptom | Likely cause / fix |
 |---|---|
-| `HTTP 503` from the coordinator | Virtual Warehouse is stopped or restarting. Wait for Running. |
+| `HTTP 503` from the coordinator | Virtual Warehouse is stopped, auto-suspended or restarting. Wait for Running and retry. |
 | `User '<machine-user>' is not authorized to delegate to '<user>'` | `authorized_proxy_user_config` missing, misspelled machine user, user not listed, or the env system-account entry was overwritten (§4c). Restart after fixing. |
-| `doAs` fails for a user that *is* listed in the proxy config | The impersonated user isn't a fully set-up workload identity — grant MLUser + DWUser + EnvironmentUser and re-run Sync Users in the Management Console (§4e). Confirm with `test_doas.py`. |
+| `doAs` fails for a user that *is* listed in the proxy config | The impersonated user isn't a fully set-up workload identity — grant MLUser + DWUser + EnvironmentUser and re-run **Synchronize Users** in the Management Console (§4e). Confirm with `test_doas.py`. |
 | `SHOW TABLES` empty but `SELECT` works | Ranger: the user lacks the show/SELECT grant on that database (§4d). (Right after creation, allow a moment for catalog propagation.) |
 | `HTTP 401` from the MCP server | Missing/expired/invalid token, or token audience/issuer doesn't match `ENTRA_AUDIENCE`/`ENTRA_ISSUER` (watch v1 `sts.windows.net` vs v2 issuer). |
 | Mapped to the wrong / no Cloudera user | Email handle ≠ Cloudera username → set `USER_MAP`; or the expected claim isn't present → set `ENTRA_USER_CLAIMS`. Use `whoami` to see what the token carries. |

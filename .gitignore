@@ -28,6 +28,8 @@ azure-creds*.txt
 *.gif
 *.webp
 *.heic
+# ...except screenshots used by the docs
+!docs/images/*
 
 # Personal scratch and archive folders
 archive*/
